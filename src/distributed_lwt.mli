@@ -1,0 +1,2 @@
+ module Make (M : Distributed.Message_type) : (Distributed.Process.S with type 'a io = 'a Lwt.t and type message_type = M.t and type logger = Lwt_log.logger)
+ (** Functor to create a [Distributed.Process.S] given a [Distributed.Message_type]. *)
