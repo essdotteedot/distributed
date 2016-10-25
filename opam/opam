@@ -13,7 +13,7 @@ build: [
 ]
 install: ["ocaml" "setup.ml" "-install"]
 remove: [
-  ["ocaml" "%{etc}%/distributed/_oasis_remove_.ml" "%{etc}%/distributed"]
+  ["ocamlfind"  "remove" "distributed"]
 ]
 build-test: [
   ["ocaml" "setup.ml" "-configure" "--enable-tests" "--%{lwt:enable}%-lwt"]
