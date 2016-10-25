@@ -299,7 +299,7 @@ module Process = struct
 
     let initalised = ref false    
 
-    let dist_lib_version = "0.1.0"                           
+    let dist_lib_version = "0.2.0"                           
 
     let string_of_termination_reason (reason : monitor_reason) : string =
       match reason with

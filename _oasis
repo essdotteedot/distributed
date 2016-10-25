@@ -1,5 +1,5 @@
 Name: distributed
-Version: 0.1.0
+Version: 0.2.0
 Synopsis: Library to provide Erlang style distributed computations. This library is inspired by Cloud Haskell.
 Authors: essdotteedot <essdotteedot@gmail.com>
 Maintainers: essdotteedot <essdotteedot@gmail.com>
