@@ -2,29 +2,31 @@ opam-version: "1.2"
 name: "distributed"
 version: "0.1.0"
 maintainer: "essdotteedot <essdotteedot@gmail.com>"
-authors: "essdotteedot <essdotteedot@gmail.com>"
-homepage: "https://github.com/essdotteedot/distributed"
-bug-reports: "https://github.com/essdotteedot/distributed/issues"
+authors: [ "essdotteedot <essdotteedot@gmail.com>" ]
 license: "MIT"
+homepage: "https://github.com/essdotteedot/distributed"
 dev-repo: "https://github.com/essdotteedot/distributed.git"
+bug-reports: "https://github.com/essdotteedot/distributed/issues"
 build: [
   ["ocaml" "setup.ml" "-configure" "--prefix" prefix "--%{lwt:enable}%-lwt"]
   ["ocaml" "setup.ml" "-build"]
 ]
 install: ["ocaml" "setup.ml" "-install"]
+remove: [
+  ["ocaml" "%{etc}%/distributed/_oasis_remove_.ml" "%{etc}%/distributed"]
+]
 build-test: [
   ["ocaml" "setup.ml" "-configure" "--enable-tests" "--%{lwt:enable}%-lwt"]
   ["ocaml" "setup.ml" "-build"]
   ["ocaml" "setup.ml" "-test"]
 ]
-build-doc: ["ocaml" "setup.ml" "-doc"]
-remove: [
-  "ocaml" "%{etc}%/distributed/_oasis_remove_.ml" "%{etc}%/distributed"
-]
+build-doc: [ "ocaml" "setup.ml" "-doc" ]
 depends: [
+  "base-threads"
+  "base-unix"
   "batteries"
+  "lwt"
   "ocamlfind" {build}
   "ounit" {test & >= "2.0"}
 ]
-depopts: ["base-threads" "base-unix" "lwt"]
-available: [os = "linux" & ocaml-version >= "4.02.3"]
+available: [ ocaml-version >= "4.02.3" ]
