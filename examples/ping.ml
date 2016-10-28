@@ -3,7 +3,7 @@ open Batteries
 module D = Distributed_lwt.Make (Ping_message)
 
 let logger =
-  Lwt_log.add_rule "*" Lwt_log.Debug ; 
+  Lwt_log.add_rule "*" Lwt_log.Fatal ; 
   Lwt_log.channel ~template:"$(date).$(milliseconds) {$(level)} : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout () 
 
 let config = D.Remote { D.Remote_config.node_name = "ping_node" ; 
