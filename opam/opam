@@ -14,7 +14,7 @@ build: [
 ]
 install: ["ocaml" "setup.ml" "-install"]
 remove: [
-  ["ocamlfind"  "remove" "distributed"]
+  ["ocaml" "%{etc}%/distributed/_oasis_remove_.ml" "%{etc}%/distributed"]
 ]
 build-test: [
   ["ocaml" "setup.ml" "-configure" "--enable-tests"
