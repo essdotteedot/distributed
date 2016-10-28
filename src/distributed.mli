@@ -1,7 +1,7 @@
 open Batteries
 
 (** This module provides a type representing a node id. *) 
-module NodeId : sig
+module Node_id : sig
 
   type t
   (** The abstract type representing a node id. *)  
@@ -11,14 +11,14 @@ module NodeId : sig
 end
 
 (** This module provides a type representing a process id. *)
-module ProcessId : sig
+module Process_id : sig
 
   type t
   (** The abstract type representing a process id. *)
 end
 
 (** Abstract type which can perform monadic concurrent IO. *)
-module type NonBlockIO = sig
+module type Nonblock_io = sig
 
   type 'a t
   (** The monadic light weight thread type returning value ['a]. *)
@@ -165,7 +165,7 @@ module Process : sig
     exception Empty_matchers
     (** Exception that is raised if [receive] is called with an empty matchers list. *)
 
-    exception InvalidNode of NodeId.t
+    exception InvalidNode of Node_id.t
     (** Exception that is raised when [spawn], [broadcast], [monitor] are called with an invalid node or if [send]
         is called with a process which resides on an unknown node.
     *)
@@ -191,10 +191,10 @@ module Process : sig
     type logger
     (** The abstract type representing the logger to be used. *)         
 
-    type monitor_reason = Normal of ProcessId.t                  (** Process terminated normally. *)
-                        | Exception of ProcessId.t * exn         (** Process terminated with exception. *)
-                        | UnkownNodeId of ProcessId.t * NodeId.t (** An operation failed because the remote node id is unknown. *)
-                        | NoProcess of ProcessId.t               (** Attempted to monitor a process that does not exist. *)
+    type monitor_reason = Normal of Process_id.t                  (** Process terminated normally. *)
+                        | Exception of Process_id.t * exn         (** Process terminated with exception. *)
+                        | UnkownNodeId of Process_id.t * Node_id.t (** An operation failed because the remote node id is unknown. *)
+                        | NoProcess of Process_id.t               (** Attempted to monitor a process that does not exist. *)
     (** Reason for process termination. *)              
 
     (** The configuration of a node to be run as a remote node i.e., one that can both send an receive messages with other nodes. *)
@@ -238,8 +238,8 @@ module Process : sig
         If the process [p ()] fails with some exception, [catch p f] behaves as the application of [f] to this exception. 
     *)
 
-    val spawn : ?monitor:bool -> NodeId.t -> unit t -> (ProcessId.t * monitor_ref option) t
-    (** [spawn monitor name node_id process] will spawn [process] on [node_id] returning the [ProcessId.t] associated with the newly spawned process.
+    val spawn : ?monitor:bool -> Node_id.t -> unit t -> (Process_id.t * monitor_ref option) t
+    (** [spawn monitor name node_id process] will spawn [process] on [node_id] returning the [Process_id.t] associated with the newly spawned process.
         If [monitor] is true (default value is false) then the spawned process will also be monitored and the associated [monitor_ref] will be 
         returned. 
 
@@ -277,7 +277,10 @@ module Process : sig
         If the [matchers] is empty then an [Empty_matchers] exception is raised.
     *)   
 
-    val send : ProcessId.t -> message_type -> unit t
+    val receive_loop : ?timeout_duration:float -> bool matcher list -> unit t
+    (** [receive_loop timeout matchers] is a convenience function which will loop until a matcher in [matchers] returns false. *)
+
+    val send : Process_id.t -> message_type -> unit t
     (** [send process_id msg] will send, asynchronously, message [msg] to the process with id [process_id] (possibly running on a remote node).
 
         If [process_id] is resides on an unknown node then [InvalidNode] exception is raised.
@@ -285,15 +288,19 @@ module Process : sig
         If [process_id] is an unknown process but the node on which it resides is known then send will still succeed (i.e., will not raise any exceptions).                       
     *)
 
-    val broadcast : NodeId.t -> message_type -> unit t
+    val (>!) : Process_id.t -> message_type -> unit t
+    (** [pid >! msg] is equivalent to [send pid msg]. [>!] is an infix alias for [send]. *)
+
+    val broadcast : Node_id.t -> message_type -> unit t
     (** [broadcast node_id msg] will send, asynchronously, message [msg] to all the processes on [node_id]. 
 
         If [node_id] is an unknown node then [InvalidNode] exception is raised.           
     *) 
 
-    val monitor : ProcessId.t -> monitor_ref t
+    val monitor : Process_id.t -> monitor_ref t
     (** [monitor pid] will allows the calling process to monitor [pid]. When [pid] terminates (normally or abnormally) this monitoring
-        process will receive a [termination_reason] message, which can be matched in [receive] using [termination_matcher].  
+        process will receive a [termination_reason] message, which can be matched in [receive] using [termination_matcher]. A single
+        process can be monitored my multiple processes.  
 
         If [process_id] is resides on an unknown node then [InvalidNode] exception is raised.          
     *)
@@ -303,23 +310,28 @@ module Process : sig
         If the current process is not monitoring the process referenced by [mref] then [unmonitor] is a no-op.            
     *) 
 
-    val get_self_pid : ProcessId.t t
+    val get_self_pid : Process_id.t t
     (** [get_self_pid process] will return the process id associated with [process]. *)
 
-    val get_self_node : NodeId.t t
+    val get_self_node : Node_id.t t
     (** [get_self_node process] will return the node id associated with [process]. *)
 
-    val get_remote_nodes : NodeId.t list t
+    val get_remote_node : string -> Node_id.t option t
+    (** [get_remote_node node_name] will return the node id associated with [name], if there is no record of a node with [name] at 
+        this time then [None] is returned. 
+    *)
+
+    val get_remote_nodes : Node_id.t list t
     (** The list of all nodes currently active and inactive. *)
 
-    val add_remote_node : string -> int -> string -> NodeId.t t
+    val add_remote_node : string -> int -> string -> Node_id.t t
     (** [add_remote_node ip port name] will connect to the remote node at [ip]:[port] with name [name] and add it to the current nodes list of connected remote nodes.
         The newly added node id is returned as the result. 
 
         If the node is operating in local only mode then [Local_only_mode] is raised.
     *)
 
-    val remove_remote_node : NodeId.t -> unit t
+    val remove_remote_node : Node_id.t -> unit t
     (** [remove_remote_node node_id] will remove [node_id] from the list of connected remote nodes.
 
         If the node is operating in local only mode then [Local_only_mode] is raised. 
@@ -336,7 +348,7 @@ module Process : sig
     *)
   end
 
-  module Make (I : NonBlockIO) (M : Message_type) : (S with type message_type = M.t and type 'a io = 'a I.t and type logger = I.logger)
+  module Make (I : Nonblock_io) (M : Message_type) : (S with type message_type = M.t and type 'a io = 'a I.t and type logger = I.logger)
   (** Functor to create a [S]. *)
 
 end

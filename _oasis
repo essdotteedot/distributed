@@ -58,7 +58,21 @@ Executable "basic"
   MainIs: basic.ml
   Build$: flag(examples) && flag(lwt)
   CompiledObject: native
-  BuildDepends: distributed.lwt    
+  BuildDepends: distributed.lwt
+
+Executable "ping"
+  Path: examples
+  MainIs: ping.ml
+  Build$: flag(examples) && flag(lwt)
+  CompiledObject: native
+  BuildDepends: distributed.lwt
+
+Executable "pong"
+  Path: examples
+  MainIs: pong.ml
+  Build$: flag(examples) && flag(lwt)
+  CompiledObject: native
+  BuildDepends: distributed.lwt        
 
 AlphaFeatures: ocamlbuild_more_args
 Document "distributed-api"

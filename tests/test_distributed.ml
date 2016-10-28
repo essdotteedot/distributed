@@ -1633,25 +1633,25 @@ let test_add_remove_nodes_remote_config _ =
       catch
         (fun () -> monitor rpid >>= fun _ -> return ())
         (function
-          | InvalidNode n -> if Distributed.NodeId.get_name n = "consumer" then return (expected_monitor_exception := true) else return ()
+          | InvalidNode n -> if Distributed.Node_id.get_name n = "consumer" then return (expected_monitor_exception := true) else return ()
           | _ -> assert false      
         ) >>= fun () ->
       catch
         (fun () -> spawn consumer_node (return () >>= fun () -> return ()) >>= fun _ -> return ())
         (function
-          | InvalidNode n -> if Distributed.NodeId.get_name n = "consumer" then return (expected_spawn_exception := true) else return ()
+          | InvalidNode n -> if Distributed.Node_id.get_name n = "consumer" then return (expected_spawn_exception := true) else return ()
           | _ -> assert false      
         ) >>= fun () ->
       catch
         (fun () -> broadcast consumer_node "a broadcast message")
         (function
-          | InvalidNode n -> if Distributed.NodeId.get_name n = "consumer" then return (expected_broadcast_exception := true) else return ()
+          | InvalidNode n -> if Distributed.Node_id.get_name n = "consumer" then return (expected_broadcast_exception := true) else return ()
           | _ -> assert false      
         ) >>= fun () ->
       catch
         (fun () -> send rpid "a message")
         (function
-          | InvalidNode n -> if Distributed.NodeId.get_name n = "consumer" then return (expected_send_exception := true) else return ()
+          | InvalidNode n -> if Distributed.Node_id.get_name n = "consumer" then return (expected_send_exception := true) else return ()
           | _ -> assert false      
         )
     ) in

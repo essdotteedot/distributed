@@ -64,16 +64,7 @@ let producer_config = D.Remote { D.Remote_config.node_name = "producer" ;
                                  D.Remote_config.connection_backlog = 10 ;
                                  D.Remote_config.node_ip = "127.0.0.1" ;
                                  D.Remote_config.remote_nodes = [("127.0.0.1",47000,"consumer")] ;
-                               }
-
-(* a little helper function to repeatadly processes messages *)
-let rec receive_loop (recv_msg : unit -> bool option D.t) = D.(
-    recv_msg () >>= fun res ->
-    match res with
-    | None -> return ()
-    | Some true -> receive_loop recv_msg
-    | Some false -> return ()
-  )   
+                               }  
 
 let consumer_proc master_pid = D.(
     (* The 'receive' function takes a list of matchers to use to process the incoming messages.
@@ -82,7 +73,7 @@ let consumer_proc master_pid = D.(
 
        The other matcher creation function is 'termination_case' which is used in the producer below. 
     *)
-    receive_loop @@ fun () -> receive [
+    receive_loop [
       case ((=) M.Ping) 
         (fun v -> 
            send master_pid M.Pong >>= fun () -> 
@@ -127,27 +118,30 @@ let producer_proc = D.(
     get_self_node >>= fun my_node ->          (* get our own node *) 
 
     (* Can lift operations from the underlying threading library, lwt is this case, into the process monad. *)
-    spawn my_node (lift_io @@ Lwt_io.printl "hi from local process") >>= fun (_, _) -> (* spawn a process on the local node which will just print "hi.." then exit *)
-    spawn ~monitor:true (List.hd nodes) (consumer_proc pid_to_send_to) >>= fun (remote_pid1, _) -> (* spawn and monitor a process on the remote node atomically *)
+    (* spawn a process on the local node which will just print "hi.." then exit *)
+    spawn my_node (lift_io @@ Lwt_io.printl "hi from local process") >>= fun (_, _) -> 
+    (* spawn and monitor a process on the remote node atomically *)
+    spawn ~monitor:true (List.hd nodes) (consumer_proc pid_to_send_to) >>= fun (remote_pid1, _) -> 
 
-    spawn (List.hd nodes) (consumer_proc pid_to_send_to) >>= fun (remote_pid2, _) -> (* spawn and monitor a process on the remote node separately *)
+    (* spawn and monitor a process on the remote node separately *)
+    spawn (List.hd nodes) (consumer_proc pid_to_send_to) >>= fun (remote_pid2, _) -> 
     monitor remote_pid2 >>= fun _ ->
 
-    (* send messages to the spawned remote processes *)
-    send remote_pid1 M.Ping >>= fun () ->
-    send remote_pid1 (M.Incr (fun i -> i + 5)) >>= fun () ->
-    send remote_pid1 (M.Var `Noop) >>= fun () ->
-    send remote_pid1 (M.Var `End) >>= fun () ->
+    (* send messages to the spawned remote processes, using the infix funtion '>!' alias of send *)
+    remote_pid1 >! M.Ping >>= fun () ->
+    remote_pid1 >! (M.Incr (fun i -> i + 5)) >>= fun () ->
+    remote_pid1 >! (M.Var `Noop) >>= fun () ->
+    remote_pid1 >! (M.Var `End) >>= fun () ->
 
-    send remote_pid2 M.Ping >>= fun () ->
-    send remote_pid2 (M.Incr (fun i -> i + 7)) >>= fun () ->
-    send remote_pid2 (M.Var `Noop) >>= fun () ->
-    send remote_pid2 (M.Raise) >>= fun () ->
+    remote_pid2 >! M.Ping >>= fun () ->
+    remote_pid2 >! (M.Incr (fun i -> i + 7)) >>= fun () ->
+    remote_pid2 >! (M.Var `Noop) >>= fun () ->
+    remote_pid2 >! (M.Raise) >>= fun () ->
 
     let processes_terminated = ref 0 in         
 
     (* process messages that are sent to us *)
-    receive_loop @@ fun () -> receive [
+    receive_loop [
       case ((=) M.Pong) 
         (fun v -> 
            lift_io @@ Lwt_io.printlf "got message %s from remote node" (M.string_of_message v) >>= fun () ->
@@ -160,7 +154,8 @@ let producer_proc = D.(
             return true
           | _ -> assert false 
         ) ;  
-      termination_case (* use the termination_case matcher to match against messages about the termination, either normal or exception, or previously monitored processes *)
+      (* use the termination_case matcher to match against messages about the termination, either normal or exception, or previously monitored processes *)
+      termination_case 
         (function
           | Normal _ -> 
             processes_terminated := !processes_terminated + 1 ;
@@ -192,6 +187,7 @@ let () =
   else if args.(1) = "producer" 
   then Lwt.(Lwt_main.run (D.run_node ~process:producer_proc producer_config >>= fun () -> fst @@ wait ()))    
   else if args.(1) = "consumer"
-  then Lwt.(Lwt_main.run (D.run_node consumer_config >>= fun () -> fst @@ wait ())) (* no initial process is spawned on the consumer node, it will be spawned from the producer *)   
+  (* no initial process is spawned on the consumer node, it will be spawned from the producer *)
+  then Lwt.(Lwt_main.run (D.run_node consumer_config >>= fun () -> fst @@ wait ()))    
   else Format.printf "Usage : %s <master/worker>\n" args.(0)
 
