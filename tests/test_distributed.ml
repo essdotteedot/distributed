@@ -150,7 +150,7 @@ let rec close_pipes = function
 (* return, bind test *)
 
 let test_return_bind _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in      
+  let module P = Distributed.Make (Test_io) (M) in      
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let result = ref None in
   let test_proc = P.(
@@ -165,7 +165,7 @@ let test_return_bind _ =
 (* spawn, spawn monitor tests for local and remote configurations *)
 
 let test_spawn_local_local_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in
+  let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let result = ref false in
   let mres = ref None in
@@ -182,7 +182,7 @@ let test_spawn_local_local_config _ =
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
 
 let test_spawn_local_remote_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in  
+  let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
                                P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
@@ -209,8 +209,8 @@ let test_spawn_local_remote_config _ =
   Hashtbl.clear established_connections 
 
 let test_spawn_remote_remote_config _ =
-  let module Producer = Distributed.Process.Make (Test_io) (M) in
-  let module Consumer = Distributed.Process.Make (Test_io) (M) in  
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
                                       Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
@@ -274,7 +274,7 @@ let test_spawn_remote_remote_config _ =
   )       
 
 let test_spawn_monitor_local_local_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in
+  let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let result = ref false in
   let result_monitor = ref None in
@@ -301,7 +301,7 @@ let test_spawn_monitor_local_local_config _ =
   assert_equal 0 (Hashtbl.length established_connections)    
 
 let test_spawn_monitor_local_remote_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in
+  let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
                                P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
@@ -337,8 +337,8 @@ let test_spawn_monitor_local_remote_config _ =
   Hashtbl.clear established_connections    
 
 let test_spawn_monitor_remote_remote_config _ =
-  let module Producer = Distributed.Process.Make (Test_io) (M) in
-  let module Consumer = Distributed.Process.Make (Test_io) (M) in  
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
                                       Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
@@ -403,7 +403,7 @@ let test_spawn_monitor_remote_remote_config _ =
 (* monitor tests for local and remote configurations *)
 
 let test_monitor_local_local_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in
+  let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let result = ref false in
   let result_monitor = ref None in  
@@ -427,7 +427,7 @@ let test_monitor_local_local_config _ =
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
 
 let test_monitor_local_remote_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in  
+  let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
                                P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
@@ -461,8 +461,8 @@ let test_monitor_local_remote_config _ =
   Hashtbl.clear established_connections    
 
 let test_monitor_remote_remote_config _ =
-  let module Producer = Distributed.Process.Make (Test_io) (M) in
-  let module Consumer = Distributed.Process.Make (Test_io) (M) in  
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
                                       Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
@@ -524,7 +524,7 @@ let test_monitor_remote_remote_config _ =
 (* unmonitor processes that were monitored using 'monitor' tests for local and remote configurations *)  
 
 let test_unmonitor_local_local_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in
+  let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let result = ref false in
   let unmon_res = ref None in
@@ -550,7 +550,7 @@ let test_unmonitor_local_local_config _ =
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
 
 let test_unmonitor_local_remote_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in  
+  let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
                                P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
@@ -586,8 +586,8 @@ let test_unmonitor_local_remote_config _ =
   Hashtbl.clear established_connections    
 
 let test_unmonitor_remote_remote_config _ =
-  let module Producer = Distributed.Process.Make (Test_io) (M) in
-  let module Consumer = Distributed.Process.Make (Test_io) (M) in  
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
                                       Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
@@ -651,7 +651,7 @@ let test_unmonitor_remote_remote_config _ =
 (* unmonitor processes that were monitored using 'spawn monitor:true' tests for local and remote configurations *)  
 
 let test_unmonitor_from_spawn_monitor_local_local_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in
+  let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let result = ref false in
   let mres = ref None in
@@ -678,7 +678,7 @@ let test_unmonitor_from_spawn_monitor_local_local_config _ =
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
 
 let test_unmonitor_from_spawn_monitor_local_remote_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in  
+  let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
                                P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
@@ -715,8 +715,8 @@ let test_unmonitor_from_spawn_monitor_local_remote_config _ =
   Hashtbl.clear established_connections    
 
 let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
-  let module Producer = Distributed.Process.Make (Test_io) (M) in
-  let module Consumer = Distributed.Process.Make (Test_io) (M) in  
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
                                       Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
@@ -781,7 +781,7 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
 (* tests for get_remote_nodes for local and remote configurations *)
 
 let test_get_remote_nodes_local_only _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in      
+  let module P = Distributed.Make (Test_io) (M) in      
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let num_remote_nodes = ref (-1) in
   let test_proc = P.(
@@ -793,7 +793,7 @@ let test_get_remote_nodes_local_only _ =
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
 
 let test_get_remote_nodes_remote_local _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in  
+  let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
                                P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
@@ -815,8 +815,8 @@ let test_get_remote_nodes_remote_local _ =
   Hashtbl.clear established_connections 
 
 let test_get_remote_nodes_remote_conifg _ =
-  let module Producer = Distributed.Process.Make (Test_io) (M) in
-  let module Consumer = Distributed.Process.Make (Test_io) (M) in  
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
                                       Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
@@ -869,7 +869,7 @@ let test_get_remote_nodes_remote_conifg _ =
 (* tests for broadcast for local and remote configurations  *)
 
 let test_broadcast_local_only _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in  
+  let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let broadcast_received = ref 0 in      
   let loop_back_received = ref None in                         
@@ -897,7 +897,7 @@ let test_broadcast_local_only _ =
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
 
 let test_broadcast_remote_local _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in  
+  let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
                                P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
@@ -935,8 +935,8 @@ let test_broadcast_remote_local _ =
   Hashtbl.clear established_connections  
 
 let test_broadcast_remote_remote _ =
-  let module Producer = Distributed.Process.Make (Test_io) (M) in
-  let module Consumer = Distributed.Process.Make (Test_io) (M) in  
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
                                       Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
@@ -1016,7 +1016,7 @@ let test_broadcast_remote_remote _ =
 (* tests for send for local and remote configurations *)
 
 let test_send_local_only _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in  
+  let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in  
   let received_message = ref None in
   let mres = ref None in       
@@ -1054,7 +1054,7 @@ let test_send_local_only _ =
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)  
 
 let test_send_remote_local _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in  
+  let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
                                P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
@@ -1102,8 +1102,8 @@ let test_send_remote_local _ =
   Hashtbl.clear established_connections    
 
 let test_send_remote_remote _ =
-  let module Producer = Distributed.Process.Make (Test_io) (M) in
-  let module Consumer = Distributed.Process.Make (Test_io) (M) in  
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
                                       Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
@@ -1194,7 +1194,7 @@ let test_send_remote_remote _ =
 (* tests for receive with empty matchers for local and remote configurations *)
 
 let test_empty_matchers_local_only _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in  
+  let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in  
   let expected_exception_happened = ref false in        
   let test_proc = P.(      
@@ -1211,7 +1211,7 @@ let test_empty_matchers_local_only _ =
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
 
 let test_empty_matchers_remote_local _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in  
+  let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
                                P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
@@ -1238,8 +1238,8 @@ let test_empty_matchers_remote_local _ =
   Hashtbl.clear established_connections 
 
 let test_empty_matchers_remote_remote _ =
-  let module Producer = Distributed.Process.Make (Test_io) (M) in
-  let module Consumer = Distributed.Process.Make (Test_io) (M) in  
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
                                       Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
@@ -1297,7 +1297,7 @@ let test_empty_matchers_remote_remote _ =
 (* tests for raise excpetions for local and remote configurations *)
 
 let test_raise_local_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in
+  let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let expected_exception_happened = ref false in  
   let test_proc = P.(                      
@@ -1318,7 +1318,7 @@ let test_raise_local_config _ =
   assert_equal 0 (Hashtbl.length established_connections)    
 
 let test_raise_local_remote_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in
+  let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
                                P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
@@ -1352,8 +1352,8 @@ let test_raise_local_remote_config _ =
    see http://caml.inria.fr/pub/docs/manual-ocaml/libref/Marshal.html
 *)
 let test_raise_remote_remote_config _ =
-  let module Producer = Distributed.Process.Make (Test_io) (M) in
-  let module Consumer = Distributed.Process.Make (Test_io) (M) in  
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
                                       Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
@@ -1420,7 +1420,7 @@ let test_raise_remote_remote_config _ =
 (* monitor tests for local and remote configurations when monitored processes has already ended *)
 
 let test_monitor_dead_process_local_local_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in
+  let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let result = ref false in
   let result_monitor = ref None in  
@@ -1445,7 +1445,7 @@ let test_monitor_dead_process_local_local_config _ =
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
 
 let test_monitor_dead_process_local_remote_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in  
+  let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
                                P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
@@ -1480,8 +1480,8 @@ let test_monitor_dead_process_local_remote_config _ =
   Hashtbl.clear established_connections    
 
 let test_monitor_dead_process_remote_remote_config _ =
-  let module Producer = Distributed.Process.Make (Test_io) (M) in
-  let module Consumer = Distributed.Process.Make (Test_io) (M) in  
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
                                       Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
@@ -1544,7 +1544,7 @@ let test_monitor_dead_process_remote_remote_config _ =
 (* add/remove remote nodes in local config tests *)
 
 let test_add_remove_remote_nodes_in_local_config _ =
-  let module P = Distributed.Process.Make (Test_io) (M) in
+  let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let add_pass = ref false in
   let remove_pass = ref false in
@@ -1580,8 +1580,8 @@ let test_add_remove_remote_nodes_in_local_config _ =
 (* test adding/removing nodes in remote configurations. *)
 
 let test_add_remove_nodes_remote_config _ =
-  let module Producer = Distributed.Process.Make (Test_io) (M) in
-  let module Consumer = Distributed.Process.Make (Test_io) (M) in  
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
                                       Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;

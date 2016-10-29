@@ -74,15 +74,11 @@ module IO_LWT = struct
 
   let timeout = Lwt_unix.timeout
 
-  let choose = Lwt.choose
-
   let pick = Lwt.pick
-
-  let nchoose = Lwt.nchoose
 
   let at_exit = Lwt_main.at_exit
 
 end
 
-module Make(M : Distributed.Message_type) : (Distributed.Process.S with type 'a io = 'a Lwt.t and type message_type = M.t and type logger = Lwt_log.logger) =
-  Distributed.Process.Make(IO_LWT)(M)
+module Make(M : Distributed.Message_type) : (Distributed.Process with type 'a io = 'a Lwt.t and type message_type = M.t and type logger = Lwt_log.logger) =
+  Distributed.Make(IO_LWT)(M)
