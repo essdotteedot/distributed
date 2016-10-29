@@ -22,7 +22,7 @@ let rec ping_loop (counter : int) = D.(
     | Some node' ->         
       broadcast node' (Ping_message.Ping (string_of_int counter)) >>= fun () ->
       receive [
-        case (function Ping_message.Pong s -> true | _ -> false) 
+        case (function Ping_message.Pong _ -> true | _ -> false) 
           (function 
             | Ping_message.Pong s -> lift_io (Lwt_io.printl @@ Format.sprintf "Got message Pong %s" s)
             | _ -> assert false

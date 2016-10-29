@@ -125,11 +125,7 @@ module Test_io = struct
 
   let timeout = Lwt_unix.timeout
 
-  let choose = Lwt.choose
-
   let pick = Lwt.pick
-
-  let nchoose = Lwt.nchoose
 
   let at_exit f = exit_fn := Some f 
 

@@ -24,15 +24,18 @@ let pong () = D.(
         (function
           | Ping_message.Ping s -> 
             lift_io (Lwt_io.printl @@ Format.sprintf "Got message Ping %s" s) >>= fun () ->
-            get_remote_node "ping_node" >>= function
-            | None -> 
-              lift_io (Lwt_io.printl "Remote node ping is not up, exiting") >>= fun () -> 
-              return false
-            | Some rnode ->
-              broadcast rnode (Ping_message.Pong (string_of_int !counter)) >>= fun () ->
-              counter := !counter + 1 ;
-              return true
-            | _ -> assert false
+            get_remote_node "ping_node" >>= 
+            begin 
+              function
+              | None -> 
+                lift_io (Lwt_io.printl "Remote node ping is not up, exiting") >>= fun () -> 
+                return false
+              | Some rnode ->
+                broadcast rnode (Ping_message.Pong (string_of_int !counter)) >>= fun () ->
+                counter := !counter + 1 ;
+                return true
+            end
+          | _ -> assert false
         ) ;
       case (const true) 
         (fun v -> 
