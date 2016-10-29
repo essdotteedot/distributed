@@ -270,16 +270,16 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
   type node_config = Local of Local_config.t
                    | Remote of Remote_config.t
 
-  type message = Data of Process_id.t * Process_id.t * message_type                   (* sending process id, receiving process id and the message *)
-               | Broadcast of Process_id.t * Node_id.t * message_type                 (* sending process id, receiving node and the message *)
+  type message = Data of Process_id.t * Process_id.t * message_type                  (* sending process id, receiving process id and the message *)
+               | Broadcast of Process_id.t * Node_id.t * message_type                (* sending process id, receiving node and the message *)
                | Proc of unit t * Process_id.t                                       (* the process to be spawned elsewhere and the process that requested the spawning *)
-               | Spawn_monitor of unit t * Process_id.t * Process_id.t                (* the process to be spawned elsewhere, the monitoring process and the process that requested the spawning.*)
+               | Spawn_monitor of unit t * Process_id.t * Process_id.t               (* the process to be spawned elsewhere, the monitoring process and the process that requested the spawning.*)
                | Node of Node_id.t                                                   (* initial message sent to remote node to identify ourselves *)
-               | Heartbeat                                                          (* heartbeat message *)
+               | Heartbeat                                                           (* heartbeat message *)
                | Exit of Process_id.t * monitor_reason                               (* process that was being monitored and the reason for termination *)
-               | Monitor of Process_id.t * Process_id.t * Process_id.t                 (* the process doing the monitoring and the id of the process to be monitored and the process that requested the monitoring *)
+               | Monitor of Process_id.t * Process_id.t * Process_id.t               (* the process doing the monitoring and the id of the process to be monitored and the process that requested the monitoring *)
                | Unmonitor of monitor_ref * Process_id.t                             (* process to unmonitor and the process that requested the unmonitor *)
-               | Proc_result of Process_id.t * Process_id.t                           (* result of spawning a process and the receiver process id *)
+               | Proc_result of Process_id.t * Process_id.t                          (* result of spawning a process and the receiver process id *)
                | Spawn_monitor_result of message option * monitor_ref * Process_id.t (* result of spawning and monitoring a process and the receiver process id *)
                | Monitor_result of message option * monitor_ref * Process_id.t       (* result of monitor and the receiving process *)
                | Unmonitor_result of monitor_ref * Process_id.t                      (* monitor ref that was requested to be unmonitored and the receiving process *)                     

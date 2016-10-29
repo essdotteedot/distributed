@@ -182,10 +182,10 @@ module type Process = sig
   type logger
   (** The abstract type representing the logger to be used. *)         
 
-  type monitor_reason = Normal of Process_id.t                  (** Process terminated normally. *)
-                      | Exception of Process_id.t * exn         (** Process terminated with exception. *)
+  type monitor_reason = Normal of Process_id.t                   (** Process terminated normally. *)
+                      | Exception of Process_id.t * exn          (** Process terminated with exception. *)
                       | UnkownNodeId of Process_id.t * Node_id.t (** An operation failed because the remote node id is unknown. *)
-                      | NoProcess of Process_id.t               (** Attempted to monitor a process that does not exist. *)
+                      | NoProcess of Process_id.t                (** Attempted to monitor a process that does not exist. *)
   (** Reason for process termination. *)              
 
   (** The configuration of a node to be run as a remote node i.e., one that can both send an receive messages with other nodes. *)
