@@ -1,4 +1,4 @@
-# distributed
+# distributed [![Build Status](https://travis-ci.org/essdotteedot/distributed.svg?branch=master)](https://travis-ci.org/essdotteedot/distributed)
 Library to provide Erlang style distributed computations. This library is inspired by Cloud Haskell.
 
 Primitive for spawning processes (in the Erlang sense) either remotely or locally, monitoring/unmonitoring spawned processes, sending, 
