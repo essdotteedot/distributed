@@ -1,5 +1,3 @@
-open Batteries
-
 module Node_id = struct
 
   type t = { ip   : Unix.inet_addr option ;
@@ -18,15 +16,27 @@ module Node_id = struct
   let get_name {name ; _} = name 
 
   let string_of_node node =
-    let string_of_ip = if node.ip = None then "None" else Unix.string_of_inet_addr @@ Option.get node.ip in 
-    let string_of_port = if node.port = None then "None" else string_of_int @@ Option.get node.port in
+    let string_of_ip = if node.ip = None then "None" else Unix.string_of_inet_addr @@ Potpourri.get_option node.ip in 
+    let string_of_port = if node.port = None then "None" else string_of_int @@ Potpourri.get_option node.port in
     Format.sprintf "{ip : %s ; port : %s ; name : %s}" string_of_ip string_of_port node.name
 
   let get_ip {ip ; _} = ip
 
-  let get_port {port ; _} = port     
+  let get_port {port ; _} = port        
 
 end
+
+module Node_id_seeded_hash_type = struct
+  type t = Node_id.t 
+
+  let equal (n1 : t) (n2 : t) : bool = 
+    (Node_id.get_ip n1, Node_id.get_port n1) = (Node_id.get_ip n2, Node_id.get_port n2)  
+
+  let hash (seed : int) (n : t) : int = 
+    Hashtbl.seeded_hash seed (Node_id.get_ip n,Node_id.get_port n)
+end
+
+module Node_id_hashtbl = Hashtbl.MakeSeeded(Node_id_seeded_hash_type)
 
 module Process_id = struct
 
@@ -39,10 +49,10 @@ module Process_id = struct
   let make nid pid = {node = nid ; proc_id = pid}         
 
   let make_local name = 
-    {node = Node_id.make_local_node name ; proc_id = Ref.post_incr next_process_id} 
+    {node = Node_id.make_local_node name ; proc_id = Potpourri.post_incr next_process_id} 
 
   let make_remote ipStr port name =
-    {node = Node_id.make_remote_node ipStr port name ; proc_id = Ref.post_incr next_process_id}
+    {node = Node_id.make_remote_node ipStr port name ; proc_id = Potpourri.post_incr next_process_id}
 
   let is_local {node ; _} local_node = Node_id.is_local node local_node     
 
@@ -53,6 +63,29 @@ module Process_id = struct
   let string_of_pid p = Format.sprintf "{node : %s ; id : %d}" (Node_id.string_of_node p.node) p.proc_id
 
 end
+
+module Process_id_seeed_hash_type = struct
+  type t = Process_id.t 
+
+  let equal (p1 : t) (p2 : t) : bool = 
+    let p1_ip = Node_id.get_ip @@ Process_id.get_node p1 in
+    let p1_port = Node_id.get_port @@ Process_id.get_node p1 in
+    let p1_id = Process_id.get_id p1 in
+
+    let p2_ip = Node_id.get_ip @@ Process_id.get_node p2 in
+    let p2_port = Node_id.get_port @@ Process_id.get_node p2 in
+    let p2_id = Process_id.get_id p2 in
+
+    (p1_ip,p1_port,p1_id) = (p2_ip,p2_port,p2_id) 
+
+  let hash (seed : int) (p : t) : int = 
+    let p_ip = Node_id.get_ip @@ Process_id.get_node p in
+    let p_port = Node_id.get_port @@ Process_id.get_node p in
+    let p_id = Process_id.get_id p in
+    Hashtbl.seeded_hash seed (p_ip,p_port,p_id)
+end
+
+module Process_id_hashtbl = Hashtbl.MakeSeeded(Process_id_seeed_hash_type)
 
 module type Nonblock_io = sig
 
@@ -270,6 +303,15 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
   type node_config = Local of Local_config.t
                    | Remote of Remote_config.t
 
+  module Monitor_ref_order_type = struct
+    type t = monitor_ref
+
+    let compare (Monitor_Ref (id1,_,_) : t) (Monitor_Ref (id2,_,_) : t) : int = 
+      compare id1 id2
+  end                 
+
+  module Monitor_ref_set = Set.Make(Monitor_ref_order_type)  
+
   type message = Data of Process_id.t * Process_id.t * message_type                  (* sending process id, receiving process id and the message *)
                | Broadcast of Process_id.t * Node_id.t * message_type                (* sending process id, receiving node and the message *)
                | Proc of unit t * Process_id.t                                       (* the process to be spawned elsewhere and the process that requested the spawning *)
@@ -285,9 +327,9 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                | Unmonitor_result of monitor_ref * Process_id.t                      (* monitor ref that was requested to be unmonitored and the receiving process *)                     
 
   and node_state = { mailboxes                : (int, message I.stream * (message option -> unit)) Hashtbl.t ; 
-                     remote_nodes             : (Node_id.t, I.output_channel) Hashtbl.t ;
-                     remote_nodes_heart_beats : (Node_id.t,bool) Hashtbl.t ;
-                     monitor_table            : (Process_id.t, monitor_ref Set.t) Hashtbl.t ;
+                     remote_nodes             : I.output_channel Node_id_hashtbl.t ;
+                     remote_nodes_heart_beats : bool Node_id_hashtbl.t ;
+                     monitor_table            : Monitor_ref_set.t Process_id_hashtbl.t ;
                      local_node               : Node_id.t ;
                      logger                   : I.logger ;
                      monitor_ref_id           : int ref ;
@@ -353,10 +395,10 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       Format.sprintf "Proc result {spawned pid : %s ; receiver pid : %s}" (Process_id.string_of_pid pid) (Process_id.string_of_pid recv_pid)
     | Spawn_monitor_result (monitor_msg,monitor_res,receiver) -> 
       Format.sprintf "Spawn and monitor result {monitor message : %s ; monitor result : %s : receiver pid : %s}" 
-        (Option.map_default string_of_message "" monitor_msg) (string_of_monitor_ref monitor_res) (Process_id.string_of_pid receiver)
+        (Potpourri.map_default_option string_of_message "" monitor_msg) (string_of_monitor_ref monitor_res) (Process_id.string_of_pid receiver)
     | Monitor_result (monitor_msg,monitor_res,receiver) -> 
       Format.sprintf "Monitor result {monitor message : %s ; monitor result : %s ; receiver pid : %s}" 
-        (Option.map_default string_of_message "" monitor_msg) (string_of_monitor_ref monitor_res) (Process_id.string_of_pid receiver)
+        (Potpourri.map_default_option string_of_message "" monitor_msg) (string_of_monitor_ref monitor_res) (Process_id.string_of_pid receiver)
     | Unmonitor_result (mref,pid) -> 
       Format.sprintf "Unmonitor result : {monittor reference to unmonitor: %s ; receiver pid : %s}" 
         (string_of_monitor_ref mref) (Process_id.string_of_pid pid)       
@@ -364,13 +406,11 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
   let string_of_config (c : node_config) : string =
     match c with
     | Local l -> Format.sprintf "{node type : local ; node name : %s}" l.Local_config.node_name
-    | Remote r ->
-      let output_str = IO.output_string () in
-      List.print 
-        ~first:"[" ~last:"]" ~sep:";" 
-        (fun out (ip,port,name) -> IO.nwrite out @@ Format.sprintf "%s:%d, name : %s" ip port name) 
-        output_str r.Remote_config.remote_nodes ;
-      let remote_nodes = IO.close_out output_str in         
+    | Remote r ->      
+      let remote_nodes = 
+        Potpourri.pp_list 
+          ~first:"[" ~last:"]" ~sep:";" r.Remote_config.remote_nodes
+          (fun (ip,port,name) -> Format.sprintf "%s:%d, name : %s" ip port name) in               
       Format.sprintf 
         "{node type : remote ; remote nodes : %s ; local port : %d ; heart beat time out : %f ;heart beat frequency : %f ; \
          connection backlog : %d ; node name : %s ; node ip : %s}" 
@@ -380,7 +420,9 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
   let log_msg (ns : node_state) ~(level:I.level) ?exn (action : string) ?pid (details : string) : unit I.t =      
     let msg = 
       if pid = None then Format.sprintf "Node {%s} - Action {%s} Details {%s}" (Node_id.string_of_node ns.local_node) action details 
-      else Format.sprintf "Node {%s}|Process {%d} - Action {%s} Details {%s}" (Node_id.string_of_node ns.local_node) (Option.get pid) action details 
+      else 
+        Format.sprintf "Node {%s}|Process {%d} - Action {%s} Details {%s}" 
+          (Node_id.string_of_node ns.local_node) (Potpourri.get_option pid) action details 
     in
     I.log ~logger:(ns.logger) ~level ?exn msg
 
@@ -400,18 +442,18 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
   let lift_io (io_comp : 'a io) : 'a t =
     fun (ns,pid) -> I.(io_comp >>= fun res -> return (ns,pid,res))  
 
-  let send_monitor_response (ns : node_state) (monitors : monitor_ref Set.t option) (termination_reason : monitor_reason) : unit io =
+  let send_monitor_response (ns : node_state) (monitors : Monitor_ref_set.t option) (termination_reason : monitor_reason) : unit io =
     let open I in
 
     let send_monitor_response_local (Monitor_Ref (_,pid,_)) =
-      match Hashtbl.Exceptionless.find ns.mailboxes (Process_id.get_id pid) with
+      match (Potpourri.of_option @@ fun () -> Hashtbl.find ns.mailboxes (Process_id.get_id pid)) with
       | None -> return ()
       | Some (_,push_fn) -> return @@ push_fn @@ Some (Exit (pid,termination_reason)) in
 
     let send_monitor_response_remote (Monitor_Ref (_,monitoring_process,monitored_process) as mref) =
       catch 
         (fun () ->
-           match Hashtbl.Exceptionless.find ns.remote_nodes (Process_id.get_node monitoring_process) with
+           match (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes (Process_id.get_node monitoring_process)) with
            | None -> 
              log_msg ns ~level:Info "sending remote monitor notification" 
                (Format.sprintf "monitor reference %s, remote node %s is down, skipping sending monitor message" 
@@ -426,7 +468,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
            log_msg ns ~exn:e ~level:Error "sending remote monitor notification" 
              (Format.sprintf "monitor reference %s, error sending monitor message to remote node %s, marking node as down" 
                 (string_of_monitor_ref mref) (Node_id.string_of_node @@ Process_id.get_node monitoring_process)) >>= fun () ->
-           return @@ Hashtbl.remove ns.remote_nodes (Process_id.get_node monitoring_process)
+           return @@ Node_id_hashtbl.remove ns.remote_nodes (Process_id.get_node monitoring_process)
         ) in           
 
     let iter_fn (Monitor_Ref (_,pid,_) as mref) _ =
@@ -443,7 +485,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
     match monitors with
     | None -> return ()
-    | Some monitors' -> Set.fold iter_fn monitors' (return ())      
+    | Some monitors' -> Monitor_ref_set.fold iter_fn monitors' (return ())      
 
   let run_process' (ns : node_state) (pid : Process_id.t) (p : unit t) : unit io =
     let open I in
@@ -452,24 +494,32 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
          log_msg ns ~level:Notice "starting process" (Process_id.string_of_pid pid) >>= fun () ->
          p (ns,pid) >>= fun _ ->
          log_msg ns ~level:Notice "process terminated successfully" (Process_id.string_of_pid pid) >>= fun () ->
-         send_monitor_response ns (Hashtbl.Exceptionless.find ns.monitor_table pid) (Normal pid) >>= fun () ->
-         Hashtbl.remove ns.monitor_table pid ;
+         send_monitor_response ns ((Potpourri.of_option @@ fun () -> Process_id_hashtbl.find ns.monitor_table pid)) (Normal pid) >>= fun () ->
+         Process_id_hashtbl.remove ns.monitor_table pid ;
          return @@ Hashtbl.remove ns.mailboxes (Process_id.get_id pid) ;                       
       )         
       (fun e -> 
          log_msg ns ~exn:e ~level:Error "process failed with error" (Process_id.string_of_pid pid) >>= fun () ->
          begin
            match e with
-           | InvalidNode n -> send_monitor_response ns (Hashtbl.Exceptionless.find ns.monitor_table pid) (UnkownNodeId (pid,n))             
-           | _ -> send_monitor_response ns (Hashtbl.Exceptionless.find ns.monitor_table pid) (Exception (pid,e))
+           | InvalidNode n -> 
+             send_monitor_response 
+               ns 
+               ((Potpourri.of_option @@ fun () -> Process_id_hashtbl.find ns.monitor_table pid)) 
+               (UnkownNodeId (pid,n))             
+           | _ -> 
+             send_monitor_response 
+               ns 
+               ((Potpourri.of_option @@ fun () -> Process_id_hashtbl.find ns.monitor_table pid)) 
+               (Exception (pid,e))
          end >>= fun () ->
-         Hashtbl.remove ns.monitor_table pid ;
+         Process_id_hashtbl.remove ns.monitor_table pid ;
          return @@ Hashtbl.remove ns.mailboxes (Process_id.get_id pid) ;
       )
 
   let sync_send pid ns ?flags out_ch msg_create_fn response_fn =
     let open I in
-    let remote_config = Option.get !(ns.config) in
+    let remote_config = Potpourri.get_option !(ns.config) in
     let new_pid = Process_id.make_remote remote_config.Remote_config.node_ip
         remote_config.Remote_config.local_port remote_config.Remote_config.node_name in
     let new_mailbox,push_fn = I.create_stream () in 
@@ -482,17 +532,17 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     Hashtbl.remove ns.mailboxes (Process_id.get_id new_pid) ;
     log_msg ns ~pid ~level:Notice "sync send end" 
       (Format.sprintf "process %s finished for sync send of %s" (Process_id.string_of_pid new_pid) (string_of_message msg_to_send)) >>= fun () ->
-    response_fn (Option.get result_pid) (* we do not send None on mailboxes *)
+    response_fn (Potpourri.get_option result_pid) (* we do not send None on mailboxes *)
 
   let monitor_helper (ns : node_state) (monitor_pid : Process_id.t) (monitee_pid : Process_id.t) : (message option * monitor_ref) =
-    let new_monitor_ref = Monitor_Ref (Ref.post_incr ns.monitor_ref_id, monitor_pid, monitee_pid) in
-    match Hashtbl.Exceptionless.find ns.mailboxes (Process_id.get_id monitee_pid) with
+    let new_monitor_ref = Monitor_Ref (Potpourri.post_incr ns.monitor_ref_id, monitor_pid, monitee_pid) in
+    match (Potpourri.of_option @@ fun () -> Hashtbl.find ns.mailboxes (Process_id.get_id monitee_pid)) with
     | None -> (Some (Exit (monitee_pid, NoProcess monitee_pid)), new_monitor_ref)        
     | Some _ ->
       begin
-        match Hashtbl.Exceptionless.find ns.monitor_table monitee_pid with
-        | None -> Hashtbl.add ns.monitor_table monitee_pid (Set.of_list [new_monitor_ref])              
-        | Some curr_monitor_set -> Hashtbl.replace ns.monitor_table monitee_pid (Set.add new_monitor_ref curr_monitor_set)
+        match (Potpourri.of_option @@ fun () -> Process_id_hashtbl.find ns.monitor_table monitee_pid) with
+        | None -> Process_id_hashtbl.add ns.monitor_table monitee_pid (Monitor_ref_set.of_list [new_monitor_ref])              
+        | Some curr_monitor_set -> Process_id_hashtbl.replace ns.monitor_table monitee_pid (Monitor_ref_set.add new_monitor_ref curr_monitor_set)
       end ; 
       (None, new_monitor_ref) 
 
@@ -504,9 +554,9 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       mref
     | (None, (Monitor_Ref (_, _, monitee_pid) as mref)) -> 
       begin
-        match Hashtbl.Exceptionless.find ns.monitor_table monitee_pid with
-        | None -> Hashtbl.add ns.monitor_table monitee_pid (Set.of_list [mref])              
-        | Some curr_monitor_set -> Hashtbl.replace ns.monitor_table monitee_pid (Set.add mref curr_monitor_set)
+        match (Potpourri.of_option @@ fun () -> Process_id_hashtbl.find ns.monitor_table monitee_pid) with
+        | None -> Process_id_hashtbl.add ns.monitor_table monitee_pid (Monitor_ref_set.of_list [mref])              
+        | Some curr_monitor_set -> Process_id_hashtbl.replace ns.monitor_table monitee_pid (Monitor_ref_set.add mref curr_monitor_set)
       end ;
       mref          
 
@@ -522,7 +572,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
           if !(ns.config) = None 
           then Process_id.make_local (Node_id.get_name node_id) 
           else
-            let remote_config = Option.get !(ns.config) in 
+            let remote_config = Potpourri.get_option !(ns.config) in 
             Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name in            
         Hashtbl.replace ns.mailboxes (Process_id.get_id new_pid) (I.create_stream ()) ;
         if monitor
@@ -542,7 +592,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             return (ns,pid,(new_pid, None))
           end            
       else
-        match Hashtbl.Exceptionless.find ns.remote_nodes node_id with
+        match (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes node_id) with
         | Some out_ch ->
           if monitor
           then 
@@ -611,7 +661,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
     let rec iter_stream iter_fn stream =
       get stream >>= fun v ->
-      if iter_fn (Option.get v) then return () else iter_stream iter_fn stream in (* a None is never sent, see send function below. *)
+      if iter_fn (Potpourri.get_option v) then return () else iter_stream iter_fn stream in (* a None is never sent, see send function below. *)
 
     let do_receive_blocking (ns,pid) =     
       let mailbox,_ = Hashtbl.find ns.mailboxes (Process_id.get_id pid) in 
@@ -619,7 +669,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       let mailbox',old_push_fn = Hashtbl.find ns.mailboxes (Process_id.get_id pid) in
       old_push_fn None ; (* mark end of old stream so we can append new and old *)
       Hashtbl.replace ns.mailboxes (Process_id.get_id pid) (stream_append mailbox' temp_stream, temp_push_fn) ; 
-      (Option.get !result) (ns,pid) >>= fun (ns', pid', result') -> 
+      (Potpourri.get_option !result) (ns,pid) >>= fun (ns', pid', result') -> 
       return (ns', pid', Some result') in
 
     fun (ns,pid) ->
@@ -679,7 +729,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       (pid : int) (ns : node_state) (node : Node_id.t) (sending_log_action : string) (sending_log_msg : string) 
       (unknown_node_msg : string) (msg : message) : unit I.t =
     let open I in
-    match Hashtbl.Exceptionless.find ns.remote_nodes node with
+    match (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes node) with
     | Some remote_output ->   
       log_msg ns ~pid ~level:Debug sending_log_action sending_log_msg >>= fun () ->        
       write_value ~flags:[Marshal.Closures] remote_output msg (* marshal because the message could be a function *)
@@ -694,7 +744,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     fun (ns,pid) ->  
       if Process_id.is_local remote_pid ns.local_node
       then
-        match Hashtbl.Exceptionless.find ns.mailboxes (Process_id.get_id remote_pid) with
+        match (Potpourri.of_option @@ fun () -> Hashtbl.find ns.mailboxes (Process_id.get_id remote_pid)) with
         | None ->
           log_msg ns ~pid:(Process_id.get_id pid) ~level:I.Warning "unable to send message to local process" 
             (Format.sprintf "message : %s, to unknown local process: %s, from local process: %s" 
@@ -762,7 +812,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
   let lookup_node_and_send (pid:int) (ns : node_state) (receiver_process : Process_id.t) (action : string) (unknown_node_msg : string) (node_found_fn : I.output_channel -> 'a I.t) : 'a I.t =
     let open I in
-    match Hashtbl.Exceptionless.find ns.remote_nodes (Process_id.get_node @@ receiver_process) with
+    match (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes (Process_id.get_node @@ receiver_process)) with
     | None -> 
       begin
         log_msg ~pid ns ~level:Error action unknown_node_msg >>= fun () ->
@@ -801,13 +851,13 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         end
 
   let unmonitor_local (ns : node_state) (Monitor_Ref (_,_, process_to_unmonitor) as mref) : unit =
-    match Hashtbl.Exceptionless.find ns.monitor_table process_to_unmonitor with
+    match (Potpourri.of_option @@ fun () -> Process_id_hashtbl.find ns.monitor_table process_to_unmonitor) with
     | None -> ()
     | Some curr_set ->
-      let curr_set' = Set.remove mref curr_set in
-      if Set.is_empty curr_set'
-      then Hashtbl.remove ns.monitor_table process_to_unmonitor
-      else Hashtbl.replace ns.monitor_table process_to_unmonitor curr_set'            
+      let curr_set' = Monitor_ref_set.remove mref curr_set in
+      if Monitor_ref_set.is_empty curr_set'
+      then Process_id_hashtbl.remove ns.monitor_table process_to_unmonitor
+      else Process_id_hashtbl.replace ns.monitor_table process_to_unmonitor curr_set'            
 
   let unmonitor (Monitor_Ref (_,_,process_to_unmonitor) as mref) : unit t =
     let open I in
@@ -842,21 +892,28 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
   let get_remote_node node_name =
     fun (ns,pid) ->
-      I.return(ns,pid, Enum.Exceptionless.find (fun node -> (Node_id.get_name node) = node_name) @@ Hashtbl.keys ns.remote_nodes)    
+      let res : Node_id.t option ref = ref None in
+      let iter_fn node _ =
+        if (Node_id.get_name node = node_name) && !res = None
+        then res := Some node           
+        else () in
+      Node_id_hashtbl.iter iter_fn ns.remote_nodes ;  
+      I.return(ns,pid, !res)    
 
   let get_remote_nodes : Node_id.t list t =
     fun (ns,pid) ->
-      I.return (ns,pid,List.of_enum @@ Hashtbl.keys ns.remote_nodes)
+      let res : Node_id.t list = Node_id_hashtbl.fold (fun n _ acc -> n::acc) ns.remote_nodes [] in      
+      I.return (ns,pid,res)
 
   let node_server_fn (ns : node_state) ((in_ch,out_ch) : I.input_channel * I.output_channel) : unit =
     let open I in
-    let remote_config = Option.get !(ns.config) in
+    let remote_config = Potpourri.get_option !(ns.config) in
     let node = ref None in    
 
     let clean_up_fn () =
       begin 
         async (fun () -> close_input in_ch >>= fun () -> close_output out_ch) ;
-        if !node = None then () else Hashtbl.remove ns.remote_nodes (Option.get !node)                
+        if !node = None then () else Node_id_hashtbl.remove ns.remote_nodes (Potpourri.get_option !node)                
       end in
 
     let spawn_preamble () =        
@@ -866,20 +923,20 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       new_pid in 
 
     let put_in_mailbox receiver_pid msg =
-      match Hashtbl.Exceptionless.find ns.mailboxes (Process_id.get_id receiver_pid) with
+      match (Potpourri.of_option @@ fun () -> Hashtbl.find ns.mailboxes (Process_id.get_id receiver_pid)) with
       | None -> 
         begin            
           let receiver_not_found_err_msg = Format.sprintf "remote node %s, processed message %s, recipient unknown local process %s" 
-              (Node_id.string_of_node @@ Option.get !node) (string_of_message msg) (Process_id.string_of_pid receiver_pid) in            
+              (Node_id.string_of_node @@ Potpourri.get_option !node) (string_of_message msg) (Process_id.string_of_pid receiver_pid) in            
           log_msg ns ~level:I.Warning "node process message" receiver_not_found_err_msg 
         end           
       | Some (_,push_fn) ->
         return @@ push_fn (Some msg) in       
 
     let rec handler () = 
-      if Hashtbl.Exceptionless.find ns.remote_nodes (Option.get !node) = None
+      if (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes (Potpourri.get_option !node)) = None
       then
-        let node_str = Node_id.string_of_node (Option.get !node) in 
+        let node_str = Node_id.string_of_node (Potpourri.get_option !node) in 
         log_msg ns ~level:Error "node process message" 
           (Format.sprintf "previously encountered errors when communicating with remote node %s, stopping handler for remote node %s" node_str node_str)
       else 
@@ -887,12 +944,12 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
           (fun () ->
              read_value in_ch >>= fun (msg:message) -> 
              log_msg ns ~level:Debug "node process message" 
-               (Format.sprintf "remote node %s, message %s" (Node_id.string_of_node @@ Option.get !node) (string_of_message msg)) >>= fun () ->
+               (Format.sprintf "remote node %s, message %s" (Node_id.string_of_node @@ Potpourri.get_option !node) (string_of_message msg)) >>= fun () ->
              match msg with
              | Node _ -> 
                handler ()            
              | Heartbeat ->
-               Hashtbl.replace ns.remote_nodes_heart_beats (Option.get !node) true ;
+               Node_id_hashtbl.replace ns.remote_nodes_heart_beats (Potpourri.get_option !node) true ;
                handler ()
              | Proc (p,sender_pid) ->
                begin
@@ -933,7 +990,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                end
              | Exit (s,m) ->
                begin
-                 match Hashtbl.Exceptionless.find ns.monitor_table s with
+                 match (Potpourri.of_option @@ fun () -> Process_id_hashtbl.find ns.monitor_table s) with
                  | None -> 
                    begin
                      log_msg ns ~level:Error "node process message" 
@@ -942,7 +999,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                    end                                                               
                  | Some pids ->
                    begin 
-                     Set.fold (fun (Monitor_Ref (_,pid,_)) _ -> put_in_mailbox pid (Exit (s,m))) pids (return ()) >>= fun () ->
+                     Monitor_ref_set.fold (fun (Monitor_Ref (_,pid,_)) _ -> put_in_mailbox pid (Exit (s,m))) pids (return ()) >>= fun () ->
                      handler ()
                    end                   
                end
@@ -973,7 +1030,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             clean_up_fn () ; 
             log_msg ns ~exn:e ~level:Error "node process message" @@ 
             Format.sprintf "unexpected exception while processing messages for remote node %s"  
-              (Node_id.string_of_node @@ Option.get !node)
+              (Node_id.string_of_node @@ Potpourri.get_option !node)
           ) in
 
     let rec wait_for_node_msg () =
@@ -985,7 +1042,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
            | Node node' -> 
              begin
                node := Some node' ;
-               Hashtbl.replace ns.remote_nodes node' out_ch ;
+               Node_id_hashtbl.replace ns.remote_nodes node' out_ch ;
                write_value out_ch (Node ns.local_node) >>= fun () ->                         
                handler ()
              end                  
@@ -1004,7 +1061,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     log_msg ns ?pid ~level:Notice "connecting to remote node" (Format.sprintf "remote node %s:%d, name %s" ip port name) >>= fun () -> 
     open_connection remote_sock_addr >>= fun (in_ch,out_ch) ->
     write_value out_ch @@ Node (ns.local_node) >>= fun () ->               
-    Hashtbl.replace ns.remote_nodes remote_node out_ch ;
+    Node_id_hashtbl.replace ns.remote_nodes remote_node out_ch ;
     node_server_fn ns (in_ch,out_ch) ;
     log_msg ns ~level:Notice "connected to remote node" (Format.sprintf "remote node %s:%d, name %s" ip port name) 
 
@@ -1033,7 +1090,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         fail Local_only_mode
       else
         log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "removing remote node" (Format.sprintf "remote node : %s" @@ Node_id.string_of_node node) >>= fun () ->
-        Hashtbl.remove ns.remote_nodes node ;
+        Node_id_hashtbl.remove ns.remote_nodes node ;
         return (ns,pid, ())                
 
   let rec connect_to_remote_nodes (ns : node_state) (nodes : (string * int * string) list) : unit io =
@@ -1064,31 +1121,31 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         (fun e -> 
            log_msg ns ~exn:e ~level:Error "sending heartbeat" (Format.sprintf "failed for node %s" @@ Node_id.string_of_node node) >>= fun () ->
            close_output out_ch >>= fun () ->
-           return @@ Hashtbl.remove ns.remote_nodes node                
+           return @@ Node_id_hashtbl.remove ns.remote_nodes node                
         ) 
     in
     sleep heart_beat_freq >>= fun () ->
-    Hashtbl.iter (fun node out_ch -> async @@ safe_send node out_ch) ns.remote_nodes ;
+    Node_id_hashtbl.iter (fun node out_ch -> async @@ safe_send node out_ch) ns.remote_nodes ;
     send_heart_beats_fn ns heart_beat_freq
 
   let rec process_remote_heart_beats_timeout_fn (ns : node_state) (heat_beat_timeout : float) : unit I.t =
     let open I in
     sleep heat_beat_timeout >>= fun () ->
-    Hashtbl.iter 
+    Node_id_hashtbl.iter 
       (fun node recvd_hear_beat ->
          if (not recvd_hear_beat) 
          then 
-           match Hashtbl.Exceptionless.find ns.remote_nodes node with
+           match (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes node) with
            | None -> async @@ fun () -> return ()
            | Some out_ch -> 
              begin 
-               Hashtbl.remove ns.remote_nodes node ; 
+               Node_id_hashtbl.remove ns.remote_nodes node ; 
                async @@ fun () -> close_output out_ch
              end 
          else ()
       ) 
       ns.remote_nodes_heart_beats ;
-    Hashtbl.clear ns.remote_nodes_heart_beats ;    
+    Node_id_hashtbl.clear ns.remote_nodes_heart_beats ;    
     process_remote_heart_beats_timeout_fn ns heat_beat_timeout  
 
   let run_node ?process (node_config : node_config) : unit io =
@@ -1101,9 +1158,9 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         match node_config with
         | Local local_config ->
           let ns = { mailboxes                = Hashtbl.create 1000 ; 
-                     remote_nodes             = Hashtbl.create 10 ;
-                     remote_nodes_heart_beats = Hashtbl.create 10 ;
-                     monitor_table            = Hashtbl.create 1000 ;
+                     remote_nodes             = Node_id_hashtbl.create ~random:true 10 ;
+                     remote_nodes_heart_beats = Node_id_hashtbl.create ~random:true 10 ;
+                     monitor_table            = Process_id_hashtbl.create ~random:true 1000 ;
                      local_node               = Node_id.make_local_node local_config.Local_config.node_name ; 
                      logger                   = local_config.Local_config.logger ;
                      monitor_ref_id           = ref 0 ;
@@ -1119,13 +1176,13 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             begin
               let new_pid = Process_id.make_local local_config.Local_config.node_name in
               Hashtbl.replace ns.mailboxes (Process_id.get_id new_pid) (I.create_stream ()) ; 
-              run_process' ns new_pid (Option.get process)
+              run_process' ns new_pid (Potpourri.get_option process)
             end 
         | Remote remote_config ->
           let ns = { mailboxes                = Hashtbl.create 1000 ; 
-                     remote_nodes             = Hashtbl.create 10 ;
-                     remote_nodes_heart_beats = Hashtbl.create 10 ;
-                     monitor_table            = Hashtbl.create 1000 ;
+                     remote_nodes             = Node_id_hashtbl.create ~random:true 10 ;
+                     remote_nodes_heart_beats = Node_id_hashtbl.create ~random:true 10 ;
+                     monitor_table            = Process_id_hashtbl.create ~random:true 1000 ;
                      local_node               = Node_id.make_remote_node remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name ; 
                      logger                   = remote_config.Remote_config.logger ;
                      monitor_ref_id           = ref 0 ;
@@ -1144,7 +1201,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             fun () ->
               log_msg ns ~level:Info "node shutting down" (Format.sprintf "start clean up actions for remote mode with configuration of %s" @@ string_of_config node_config) >>= fun () ->
               shutdown_server command_process_server ;
-              Hashtbl.fold (fun _ out_ch _ -> I.close_output out_ch) ns.remote_nodes (return ()) >>= fun () ->
+              Node_id_hashtbl.fold (fun _ out_ch _ -> I.close_output out_ch) ns.remote_nodes (return ()) >>= fun () ->
               log_msg ns ~level:Info "node shutting down" (Format.sprintf "finished clean up actions for remote mode with configuration of %s" @@ string_of_config node_config)                                                                                  
           );   
           if process = None
@@ -1153,7 +1210,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             begin
               let new_pid = Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name in
               Hashtbl.replace ns.mailboxes (Process_id.get_id new_pid) (I.create_stream ()) ; 
-              run_process' ns new_pid (Option.get process)
+              run_process' ns new_pid (Potpourri.get_option process)
             end             
       end                              
 end    

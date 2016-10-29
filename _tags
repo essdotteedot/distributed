@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: 3b66cb062c34af80949e58861bf5689e)
+# DO NOT EDIT (digest: 3078a570b5710016fbad33f298d7c432)
 # Ignore VCS directories, you can use the same kind of rule outside
 # OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
@@ -18,21 +18,18 @@ true: annot, bin_annot
 "src/distributed.cmxs": use_distributed
 # Library distributed-lwt
 "src/distributed-lwt.cmxs": use_distributed-lwt
-<src/*.ml{,i,y}>: package(batteries)
 <src/*.ml{,i,y}>: package(lwt)
 <src/*.ml{,i,y}>: package(lwt.unix)
 <src/*.ml{,i,y}>: package(threads)
 <src/*.ml{,i,y}>: package(unix)
 <src/*.ml{,i,y}>: use_distributed
 # Executable test_distributed
-"tests/test_distributed.native": package(batteries)
 "tests/test_distributed.native": package(lwt)
 "tests/test_distributed.native": package(lwt.unix)
 "tests/test_distributed.native": package(oUnit)
 "tests/test_distributed.native": package(threads)
 "tests/test_distributed.native": package(unix)
 "tests/test_distributed.native": use_distributed
-<tests/*.ml{,i,y}>: package(batteries)
 <tests/*.ml{,i,y}>: package(lwt)
 <tests/*.ml{,i,y}>: package(lwt.unix)
 <tests/*.ml{,i,y}>: package(oUnit)
@@ -40,7 +37,6 @@ true: annot, bin_annot
 <tests/*.ml{,i,y}>: package(unix)
 <tests/*.ml{,i,y}>: use_distributed
 # Executable basic
-"examples/basic.native": package(batteries)
 "examples/basic.native": package(lwt)
 "examples/basic.native": package(lwt.unix)
 "examples/basic.native": package(threads)
@@ -48,7 +44,6 @@ true: annot, bin_annot
 "examples/basic.native": use_distributed
 "examples/basic.native": use_distributed-lwt
 # Executable ping
-"examples/ping.native": package(batteries)
 "examples/ping.native": package(lwt)
 "examples/ping.native": package(lwt.unix)
 "examples/ping.native": package(threads)
@@ -56,14 +51,12 @@ true: annot, bin_annot
 "examples/ping.native": use_distributed
 "examples/ping.native": use_distributed-lwt
 # Executable pong
-"examples/pong.native": package(batteries)
 "examples/pong.native": package(lwt)
 "examples/pong.native": package(lwt.unix)
 "examples/pong.native": package(threads)
 "examples/pong.native": package(unix)
 "examples/pong.native": use_distributed
 "examples/pong.native": use_distributed-lwt
-<examples/*.ml{,i,y}>: package(batteries)
 <examples/*.ml{,i,y}>: package(lwt)
 <examples/*.ml{,i,y}>: package(lwt.unix)
 <examples/*.ml{,i,y}>: package(threads)

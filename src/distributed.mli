@@ -1,5 +1,3 @@
-open Batteries
-
 (** This module provides a type representing a node id. *) 
 module Node_id : sig
 

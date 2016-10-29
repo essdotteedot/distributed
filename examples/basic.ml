@@ -1,5 +1,3 @@
-open Batteries
-
 (* An example program intended to show the basics of the API (spawn, monitor, send, receive).
    The program can be run on the same computer or distributed across different computers. 
    If you want to run across different computers then tweak the node configurations below
@@ -104,7 +102,7 @@ let consumer_proc master_pid = D.(
           | _ -> assert false 
         ) ;    
       (*a catch all case, this is good to have otherwise the non-matching messages are just left in the order they came in the processes' mailbox *)
-      case (const true) 
+      case (fun _ -> true) 
         (fun v -> 
            lift_io @@ Lwt_io.printlf "got unexpected message %s from remote node" @@ M.string_of_message v >>= fun () ->
            return true                 
@@ -172,7 +170,7 @@ let producer_proc = D.(
             else assert false
           | _ -> assert false 
         )  ;
-      case (const true) 
+      case (fun _ -> true) 
         (fun v -> 
            lift_io @@ Lwt_io.printlf "got unexpected message %s from remote node" (M.string_of_message v) >>= fun () ->
            return true

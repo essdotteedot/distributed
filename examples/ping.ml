@@ -1,5 +1,3 @@
-open Batteries
-
 module D = Distributed_lwt.Make (Ping_message)
 
 let logger =
@@ -27,7 +25,7 @@ let rec ping_loop (counter : int) = D.(
             | Ping_message.Pong s -> lift_io (Lwt_io.printl @@ Format.sprintf "Got message Pong %s" s)
             | _ -> assert false
           ) ;
-        case (const true) 
+        case (fun _ -> true) 
           (fun v ->
              lift_io (Lwt_io.printl @@ Format.sprintf "Got unexpected message %s" (Ping_message.string_of_message v)) >>= fun () ->
              assert false

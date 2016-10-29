@@ -23,8 +23,7 @@ Flag lwt
 Library "distributed"
   Path: src
   CompiledObject: native
-  Modules: Distributed
-  BuildDepends: batteries
+  Modules: Distributed  
 
 Library "distributed-lwt"
   Build$: flag(lwt)
@@ -34,7 +33,7 @@ Library "distributed-lwt"
   CompiledObject: native
   Path: src    
   Modules: Distributed_lwt
-  BuildDepends: distributed, unix, lwt, lwt.unix, batteries, threads
+  BuildDepends: distributed, unix, lwt, lwt.unix, threads
 
 Executable "test_distributed"
   Path: tests
@@ -42,7 +41,7 @@ Executable "test_distributed"
   Build$: flag(tests)
   CompiledObject: native
   Install: false
-  BuildDepends: distributed, unix, lwt, lwt.unix, batteries, threads, oUnit (>= 2.0) 
+  BuildDepends: distributed, unix, lwt, lwt.unix, threads, oUnit (>= 2.0) 
 
 Test "test_distributed"
   Run$: flag(tests)

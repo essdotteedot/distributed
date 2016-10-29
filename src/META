@@ -1,9 +1,8 @@
 # OASIS_START
-# DO NOT EDIT (digest: d9a88212237620efcf312913ba054b48)
+# DO NOT EDIT (digest: 89bf3b0c4b9040d5f555ed6aa2024a9e)
 version = "0.3.0"
 description =
 "Library to provide Erlang style distributed computations. This library is inspired by Cloud Haskell."
-requires = "batteries"
 archive(byte) = "distributed.cma"
 archive(byte, plugin) = "distributed.cma"
 archive(native) = "distributed.cmxa"
@@ -13,7 +12,7 @@ package "lwt" (
  version = "0.3.0"
  description =
  "Library to provide Erlang style distributed computations. This library is inspired by Cloud Haskell."
- requires = "distributed unix lwt lwt.unix batteries threads"
+ requires = "distributed unix lwt lwt.unix threads"
  archive(byte) = "distributed-lwt.cma"
  archive(byte, plugin) = "distributed-lwt.cma"
  archive(native) = "distributed-lwt.cmxa"
