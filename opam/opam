@@ -8,17 +8,15 @@ homepage: "https://github.com/essdotteedot/distributed"
 dev-repo: "https://github.com/essdotteedot/distributed.git"
 bug-reports: "https://github.com/essdotteedot/distributed/issues"
 build: [
-  ["ocaml" "setup.ml" "-configure" "--prefix" prefix
-    "--%{lwt:enable}%-lwt"]
+  ["ocaml" "setup.ml" "-configure" "--prefix" prefix "--%{lwt:enable}%-lwt"]
   ["ocaml" "setup.ml" "-build"]
 ]
 install: ["ocaml" "setup.ml" "-install"]
 remove: [
-  ["ocaml" "%{etc}%/distributed/_oasis_remove_.ml" "%{etc}%/distributed"]
+  ["ocamlfind" "remove" "distributed"]
 ]
 build-test: [
-  ["ocaml" "setup.ml" "-configure" "--enable-tests"
-    "--%{lwt:enable}%-lwt"]
+  ["ocaml" "setup.ml" "-configure" "--enable-tests" "--%{lwt:enable}%-lwt"]
   ["ocaml" "setup.ml" "-build"]
   ["ocaml" "setup.ml" "-test"]
 ]
