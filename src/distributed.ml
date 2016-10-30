@@ -672,6 +672,11 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       (Potpourri.get_option !result) (ns,pid) >>= fun (ns', pid', result') -> 
       return (ns', pid', Some result') in
 
+    let restore_mailbox ns pid =
+      let mailbox',old_push_fn = Hashtbl.find ns.mailboxes (Process_id.get_id pid) in
+      old_push_fn None ; (* close old stream so we can append new and old *)
+      Hashtbl.replace ns.mailboxes (Process_id.get_id pid) (stream_append mailbox' temp_stream, temp_push_fn) in  
+
     fun (ns,pid) ->
       if matchers = []
       then 
@@ -683,14 +688,21 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       else
         match timeout_duration with
         | None -> 
-          begin
-            log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "receiving with no time out" 
-              (Format.sprintf "receiver process %s" (Process_id.string_of_pid pid)) >>= fun () ->              
-            do_receive_blocking (ns,pid) >>= fun (ns',pid',res) ->
-            log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "successfully received and processed message with no time out" 
-              (Format.sprintf "receiver process %s" (Process_id.string_of_pid pid)) >>= fun () ->
-            return (ns',pid',res)
-          end
+          catch 
+            (fun () ->
+               log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "receiving with no time out" 
+                 (Format.sprintf "receiver process %s" (Process_id.string_of_pid pid)) >>= fun () ->              
+               do_receive_blocking (ns,pid) >>= fun (ns',pid',res) ->
+               log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "successfully received and processed message with no time out" 
+                 (Format.sprintf "receiver process %s" (Process_id.string_of_pid pid)) >>= fun () ->
+               return (ns',pid',res)
+            )
+            (fun e ->
+               restore_mailbox ns pid ;
+               log_msg ~pid:(Process_id.get_id pid) ns ~exn:e ~level:Error "receiving with no time out failed" 
+                 (Format.sprintf "receiver process %s, encountred exception" (Process_id.string_of_pid pid)) >>= fun () ->
+               fail e
+            )          
         | Some timeout_duration' ->
           log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "receiving with time out" 
             (Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->            
@@ -704,14 +716,13 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             (function 
               | Timeout -> 
                 begin
+                  restore_mailbox ns pid ;
                   log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "receive timed out" 
                     (Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->
-                  let mailbox',old_push_fn = Hashtbl.find ns.mailboxes (Process_id.get_id pid) in
-                  old_push_fn None ; (* close old stream so we can append new and old *)
-                  Hashtbl.replace ns.mailboxes (Process_id.get_id pid) (stream_append mailbox' temp_stream, temp_push_fn) ;
                   return (ns,pid, None)
                 end
               | e ->
+                restore_mailbox ns pid ;
                 log_msg ~pid:(Process_id.get_id pid) ns ~exn:e ~level:Error "receiving with time out failed" 
                   (Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->
                 fail e
@@ -1062,6 +1073,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     open_connection remote_sock_addr >>= fun (in_ch,out_ch) ->
     write_value out_ch @@ Node (ns.local_node) >>= fun () ->               
     Node_id_hashtbl.replace ns.remote_nodes remote_node out_ch ;
+    Node_id_hashtbl.replace ns.remote_nodes_heart_beats remote_node false ;
     node_server_fn ns (in_ch,out_ch) ;
     log_msg ns ~level:Notice "connected to remote node" (Format.sprintf "remote node %s:%d, name %s" ip port name) 
 
@@ -1091,6 +1103,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       else
         log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "removing remote node" (Format.sprintf "remote node : %s" @@ Node_id.string_of_node node) >>= fun () ->
         Node_id_hashtbl.remove ns.remote_nodes node ;
+        Node_id_hashtbl.remove ns.remote_nodes_heart_beats node ;
         return (ns,pid, ())                
 
   let rec connect_to_remote_nodes (ns : node_state) (nodes : (string * int * string) list) : unit io =
