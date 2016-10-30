@@ -12,9 +12,6 @@
 # ocamlbuild working directory
 _build/
 
-#doc directory
-distributed-api.docdir/
-
 # ocamlbuild targets
 *.byte
 *.native

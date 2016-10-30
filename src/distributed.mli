@@ -1,3 +1,11 @@
+(** This module provides modules to create distribtued computations. 
+    Distributed comutations are described using the {!modtype:Process}. 
+    {!modtype:Process} provides a monadic interface to describe distributed computations.
+
+    @author essdotteedot [<essdotteedot[at]gmail[dot]com>]
+    @version 0.3.0
+*)
+
 (** This module provides a type representing a node id. *) 
 module Node_id : sig
 
@@ -37,7 +45,7 @@ module type Nonblock_io = sig
   (** A type to represent a logger *)
 
   exception Timeout
-  (** Exception raised by time out operations *)
+  (** Exception raised by {!val:timeout} operation *)
 
   type level = Debug 
              | Info
@@ -125,7 +133,7 @@ module type Nonblock_io = sig
   (** [sleep d] is a thread that remains suspended for [d] seconds and then terminates. *)
 
   val timeout : float -> 'a t
-  (** [timeout d] is a thread that remains suspended for [d] seconds and then fails with ​Timeout. *)
+  (** [timeout d] is a thread that remains suspended for [d] seconds and then fails with ​{exception:Timeout}. *)
 
   val pick : 'a t list -> 'a t
   (** [pick l] is the same as [​choose], except that it cancels all sleeping threads when one terminates. *)
@@ -145,22 +153,22 @@ module type Message_type = sig
   (** [string_of_message msg] returns the [string] representation of [msg]. *)
 end
 
-(** A unit of computation which can be executed on a remote host. *)
+(** A unit of computation which can be executed on a local or remote host, is monadic. *)
 module type Process = sig
 
   exception Init_more_than_once
-  (** Exception that is raised if [bootstrap] is called more than once. *)
+  (** Exception that is raised if {!val:run_node} is called more than once. *)
 
   exception Empty_matchers
-  (** Exception that is raised if [receive] is called with an empty matchers list. *)
+  (** Exception that is raised if {!val:receive} is called with an empty matchers list. *)
 
   exception InvalidNode of Node_id.t
-  (** Exception that is raised when [spawn], [broadcast], [monitor] are called with an invalid node or if [send]
+  (** Exception that is raised when {!val:spawn}, {!val:broadcast}, {!val:monitor} are called with an invalid node or if {!val:send}
       is called with a process which resides on an unknown node.
   *)
 
   exception Local_only_mode
-  (** Exception that is raised when [add_remote_node] or [remove_remote_node] is called on a node that is operating in local only mode. *)        
+  (** Exception that is raised when {!val:add_remote_node} or {!val:remove_remote_node} is called on a node that is operating in local only mode. *)        
 
   type 'a t
   (** The abstract monadic type representing a computation returning ['a]. *)
@@ -172,7 +180,7 @@ module type Process = sig
   (** The abstract type representing the messages that will be sent between processes. *) 
 
   type 'a matcher
-  (** The abstract type representing a matcher to be used with [receive] function. *)  
+  (** The abstract type representing a matcher to be used with {!val:receive} function. *)  
 
   type monitor_ref
   (** The abstract type representing a monitor_ref that is returned when a processes is monitored and can be used to unmonitor it. *)   
@@ -206,9 +214,9 @@ module type Process = sig
              }
   end
 
+  (** The configuration of a node. Can be one of {!node_config.Local} or {!node_config.Remote}. *)
   type node_config = Local of Local_config.t
-                   | Remote of Remote_config.t
-  (** The configuration of a node. Can be one of [Local_only] or [Remote]. *)                                    
+                   | Remote of Remote_config.t                                      
 
   val return : 'a -> 'a t
   (** [return v] creates a computation returning [v]. *)
@@ -228,22 +236,22 @@ module type Process = sig
   *)
 
   val spawn : ?monitor:bool -> Node_id.t -> unit t -> (Process_id.t * monitor_ref option) t
-  (** [spawn monitor name node_id process] will spawn [process] on [node_id] returning the [Process_id.t] associated with the newly spawned process.
-      If [monitor] is true (default value is false) then the spawned process will also be monitored and the associated [monitor_ref] will be 
+  (** [spawn monitor name node_id process] will spawn [process] on [node_id] returning the {!type:Process_id.t} associated with the newly spawned process.
+      If [monitor] is true (default value is false) then the spawned process will also be monitored and the associated {!type:monitor_ref} will be 
       returned. 
 
-      If [node_id] is an unknown node then [InvalidNode] exception is raised.
+      If [node_id] is an unknown node then {!exception:InvalidNode} exception is raised.
   *) 
 
   val case : (message_type -> bool) -> (message_type -> 'a t) -> 'a matcher
-  (** [case match_fn handler] will create a [matcher] which will use [match_fn] to match on potential messages and [handler]
+  (** [case match_fn handler] will create a {!type:matcher} which will use [match_fn] to match on potential messages and [handler]
       to process the matched message .
   *)
 
   val termination_case : (monitor_reason -> 'a t) -> 'a matcher
   (** [termination_case handler] will create a [matcher] which can use used to match against [termination_reason] for a 
       process that is being monitored. If this process is monitoring another process then providing this matcher in the list
-      of matchers to [receive] will allow this process to act on the termination of the monitored process.
+      of matchers to {!val:receive} will allow this process to act on the termination of the monitored process.
 
       NOTE : when a remote process (i.e., one running on another node) raises an exception you will not be able 
       to pattern match on the exception . This is a limitation of the Marshal OCaml module : 
@@ -263,7 +271,7 @@ module type Process = sig
 
       If a time out is provided and no matching messages has arrived in the time out period then None will be returned.
 
-      If the [matchers] is empty then an [Empty_matchers] exception is raised.
+      If the [matchers] is empty then an {!exception:Empty_matchers} exception is raised.
   *)   
 
   val receive_loop : ?timeout_duration:float -> bool matcher list -> unit t
@@ -272,7 +280,7 @@ module type Process = sig
   val send : Process_id.t -> message_type -> unit t
   (** [send process_id msg] will send, asynchronously, message [msg] to the process with id [process_id] (possibly running on a remote node).
 
-      If [process_id] is resides on an unknown node then [InvalidNode] exception is raised.
+      If [process_id] is resides on an unknown node then {!exception:InvalidNode} exception is raised.
 
       If [process_id] is an unknown process but the node on which it resides is known then send will still succeed (i.e., will not raise any exceptions).                       
   *)
@@ -283,7 +291,7 @@ module type Process = sig
   val broadcast : Node_id.t -> message_type -> unit t
   (** [broadcast node_id msg] will send, asynchronously, message [msg] to all the processes on [node_id]. 
 
-      If [node_id] is an unknown node then [InvalidNode] exception is raised.           
+      If [node_id] is an unknown node then {!exception:InvalidNode} exception is raised.           
   *) 
 
   val monitor : Process_id.t -> monitor_ref t
@@ -291,7 +299,7 @@ module type Process = sig
       process will receive a [termination_reason] message, which can be matched in [receive] using [termination_matcher]. A single
       process can be monitored my multiple processes.  
 
-      If [process_id] is resides on an unknown node then [InvalidNode] exception is raised.          
+      If [process_id] is resides on an unknown node then {!exception:InvalidNode} exception is raised.          
   *)
 
   val unmonitor : monitor_ref -> unit t
@@ -317,13 +325,13 @@ module type Process = sig
   (** [add_remote_node ip port name] will connect to the remote node at [ip]:[port] with name [name] and add it to the current nodes list of connected remote nodes.
       The newly added node id is returned as the result. 
 
-      If the node is operating in local only mode then [Local_only_mode] is raised.
+      If the node is operating in local only mode then {!exception:Local_only_mode} is raised.
   *)
 
   val remove_remote_node : Node_id.t -> unit t
   (** [remove_remote_node node_id] will remove [node_id] from the list of connected remote nodes.
 
-      If the node is operating in local only mode then [Local_only_mode] is raised. 
+      If the node is operating in local only mode then {!exception:Local_only_mode} is raised. 
   *)
 
   val lift_io : 'a io -> 'a t
@@ -333,10 +341,10 @@ module type Process = sig
   (** [run_node process node_config] performs the necessary bootstrapping to start this node according to [node_config], 
       then, if provided, runs the initial [process] returning the resulting [io]).
 
-      If it's called more than once then an exception of [Init_more_than_once] is raised. 
+      If it's called more than once then an exception of {!exception:Init_more_than_once} is raised. 
   *)
 end
 
 module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_type = M.t and type 'a io = 'a I.t and type logger = I.logger)
-(** Functor to create a [S]. *)
+(** Functor to create a module of type {!modtype:Process} given a message module [M] of type {!modtype:Message_type}. *)
 
