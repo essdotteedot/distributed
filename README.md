@@ -4,4 +4,4 @@ Library to provide Erlang style distributed computations. This library is inspir
 Primitive for spawning processes (in the Erlang sense) either remotely or locally, monitoring/unmonitoring spawned processes, sending, 
 receiving, broadcasting messages to those processes. Unlike Erlang, the messages that are sent between processes are typed.
 
-For more information see the Distributed.Process.S signature and the example in the examples directory.
+For more information see the docs and the example in the examples directory.
