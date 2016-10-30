@@ -7,7 +7,7 @@ receiving, broadcasting messages to those processes. Unlike Erlang, the messages
 Installation
 ------------
 
-The bindings are available via [OPAM](https://opam.ocaml.org):
+The library is available via [OPAM](https://opam.ocaml.org):
 
     $ opam install distributed
 
