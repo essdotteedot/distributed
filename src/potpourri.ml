@@ -29,6 +29,3 @@ let pp_list ?first ?last ?sep (items : 'a list) (string_of_item : 'a -> string) 
     items ;    
   if last <> None then Buffer.add_string buff (get_option last) else () ;
   Buffer.contents buff
-
- let hashtbl_keys (table : ('a,'b) Hashtbl.t) : 'a list =
-     Hashtbl.fold (fun k _ acc -> k::acc) table [] 

@@ -23,7 +23,8 @@ Flag lwt
 Library "distributed"
   Path: src
   CompiledObject: native
-  Modules: Distributed  
+  Modules: Distributed
+  InternalModules: Potpourri  
 
 Library "distributed-lwt"
   Build$: flag(lwt)
