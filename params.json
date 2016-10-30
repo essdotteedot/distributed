@@ -1,6 +1,0 @@
-{
-  "name": "Distributed",
-  "tagline": "Library to provide Erlang style distributed computations. This library is inspired by Cloud Haskell.",
-  "body": "# distributed [![Build Status](https://travis-ci.org/essdotteedot/distributed.svg?branch=master)](https://travis-ci.org/essdotteedot/distributed)\r\nLibrary to provide Erlang style distributed computations. This library is inspired by Cloud Haskell.\r\n\r\nPrimitive for spawning processes (in the Erlang sense) either remotely or locally, monitoring/unmonitoring spawned processes, sending, \r\nreceiving, broadcasting messages to those processes. Unlike Erlang, the messages that are sent between processes are typed.\r\n\r\n\r\n",
-  "note": "Don't delete this file! It's used internally to help with page regeneration."
-}
