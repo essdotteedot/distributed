@@ -1,7 +1,23 @@
 # distributed [![Build Status](https://travis-ci.org/essdotteedot/distributed.svg?branch=master)](https://travis-ci.org/essdotteedot/distributed)
 Library to provide Erlang style distributed computations. This library is inspired by Cloud Haskell.
 
-Primitive for spawning processes (in the Erlang sense) either remotely or locally, monitoring/unmonitoring spawned processes, sending, 
+Primitives for spawning processes (in the Erlang sense) either remotely or locally, monitoring/unmonitoring spawned processes, sending, 
 receiving, broadcasting messages to those processes. Unlike Erlang, the messages that are sent between processes are typed.
 
-For more information see the docs and the example in the examples directory.
+Installation
+------------
+
+The bindings are available via [OPAM](https://opam.ocaml.org):
+
+    $ opam install distributed
+
+Documentation
+-------------
+
+The API documentation is available [here](https://essdotteedot.github.io/distributed/).
+Example programs can be found in the [examples] (examples) directory.
+
+License
+-------
+
+[MIT License](LICENSE)
