@@ -1,0 +1,33 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+<link rel="Start" href="index.html">
+<link rel="previous" href="Distributed.html">
+<link rel="Up" href="index.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of exceptions" rel=Appendix href="index_exceptions.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Index of module types" rel=Appendix href="index_module_types.html">
+<link title="Distributed" rel="Chapter" href="Distributed.html">
+<link title="Distributed_lwt" rel="Chapter" href="Distributed_lwt.html"><title>Distributed_lwt</title>
+</head>
+<body>
+<div class="navbar"><a class="pre" href="Distributed.html" title="Distributed">Previous</a>
+&nbsp;<a class="up" href="index.html" title="Index">Up</a>
+&nbsp;</div>
+<h1>Module <a href="type_Distributed_lwt.html">Distributed_lwt</a></h1>
+
+<pre><span class="keyword">module</span> Distributed_lwt: <code class="code"><span class="keyword">sig</span></code> <a href="Distributed_lwt.html">..</a> <code class="code"><span class="keyword">end</span></code></pre><div class="info module top">
+A lwt based implementation of <a href="Distributed.html"><code class="code"><span class="constructor">Distributed</span></code></a>.<br>
+<b>Author(s):</b> essdotteedot [&lt;essdotteedot[at]gmail[dot]com&gt;]<br>
+<b>Version:</b> 0.3.0<br>
+</div>
+<hr width="100%">
+
+<pre><span class="keyword">module</span> <a href="Distributed_lwt.Make.html">Make</a> <code class="code">(</code><code class="code"><span class="constructor">M</span></code><code class="code"> : </code><code class="type"><a href="Distributed.Message_type.html">Distributed.Message_type</a></code><code class="code">) </code>: <code class="type"><a href="Distributed.Process.html">Distributed.Process</a></code><code class="type">  with type 'a io = 'a Lwt.t and type message_type = M.t and type logger = Lwt_log.logger</code></pre><div class="info">
+Functor to create a module of type <a href="Distributed.Process.html"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span></code></a> given a message module <code class="code"><span class="constructor">M</span></code> of type <a href="Distributed.Message_type.html"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Message_type</span></code></a>.
+</div>
+</body></html>

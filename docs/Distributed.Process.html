@@ -1,0 +1,306 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+<link rel="Start" href="index.html">
+<link rel="previous" href="Distributed.Message_type.html">
+<link rel="Up" href="Distributed.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of exceptions" rel=Appendix href="index_exceptions.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Index of module types" rel=Appendix href="index_module_types.html">
+<link title="Distributed" rel="Chapter" href="Distributed.html">
+<link title="Distributed_lwt" rel="Chapter" href="Distributed_lwt.html"><title>Distributed.Process</title>
+</head>
+<body>
+<div class="navbar"><a class="pre" href="Distributed.Message_type.html" title="Distributed.Message_type">Previous</a>
+&nbsp;<a class="up" href="Distributed.html" title="Distributed">Up</a>
+&nbsp;</div>
+<h1>Module type <a href="type_Distributed.Process.html">Distributed.Process</a></h1>
+
+<pre><span class="keyword">module type</span> Process = <code class="code"><span class="keyword">sig</span></code> <a href="Distributed.Process.html">..</a> <code class="code"><span class="keyword">end</span></code></pre><div class="info modtype top">
+A unit of computation which can be executed on a local or remote host, is monadic.<br>
+</div>
+<hr width="100%">
+
+<pre><span id="EXCEPTIONInit_more_than_once"><span class="keyword">exception</span> Init_more_than_once</span></pre>
+<div class="info ">
+Exception that is raised if <a href="Distributed.Process.html#VALrun_node"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.run_node</code></a> is called more than once.<br>
+</div>
+
+<pre><span id="EXCEPTIONEmpty_matchers"><span class="keyword">exception</span> Empty_matchers</span></pre>
+<div class="info ">
+Exception that is raised if <a href="Distributed.Process.html#VALreceive"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.receive</code></a> is called with an empty matchers list.<br>
+</div>
+
+<pre><span id="EXCEPTIONInvalidNode"><span class="keyword">exception</span> InvalidNode</span> <span class="keyword">of</span> <code class="type"><a href="Distributed.Node_id.html#TYPEt">Distributed.Node_id.t</a></code></pre>
+<div class="info ">
+Exception that is raised when <a href="Distributed.Process.html#VALspawn"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.spawn</code></a>, <a href="Distributed.Process.html#VALbroadcast"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.broadcast</code></a>, <a href="Distributed.Process.html#VALmonitor"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.monitor</code></a> are called with an invalid node or if <a href="Distributed.Process.html#VALsend"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.send</code></a>
+      is called with a process which resides on an unknown node.<br>
+</div>
+
+<pre><span id="EXCEPTIONLocal_only_mode"><span class="keyword">exception</span> Local_only_mode</span></pre>
+<div class="info ">
+Exception that is raised when <a href="Distributed.Process.html#VALadd_remote_node"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.add_remote_node</code></a> or <a href="Distributed.Process.html#VALremove_remote_node"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.remove_remote_node</code></a> is called on a node that is operating in local only mode.<br>
+</div>
+
+<pre><span id="TYPEt"><span class="keyword">type</span> <code class="type">'a</code> t</span> </pre>
+<div class="info ">
+The abstract monadic type representing a computation returning <code class="code"><span class="keywordsign">'</span>a</code>.<br>
+</div>
+
+
+<pre><span id="TYPEio"><span class="keyword">type</span> <code class="type">'a</code> io</span> </pre>
+<div class="info ">
+Abstract type for monadic concurrent IO returning <code class="code"><span class="keywordsign">'</span>a</code>.<br>
+</div>
+
+
+<pre><span id="TYPEmessage_type"><span class="keyword">type</span> <code class="type"></code>message_type</span> </pre>
+<div class="info ">
+The abstract type representing the messages that will be sent between processes.<br>
+</div>
+
+
+<pre><span id="TYPEmatcher"><span class="keyword">type</span> <code class="type">'a</code> matcher</span> </pre>
+<div class="info ">
+The abstract type representing a matcher to be used with <a href="Distributed.Process.html#VALreceive"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.receive</code></a> function.<br>
+</div>
+
+
+<pre><span id="TYPEmonitor_ref"><span class="keyword">type</span> <code class="type"></code>monitor_ref</span> </pre>
+<div class="info ">
+The abstract type representing a monitor_ref that is returned when a processes is monitored and can be used to unmonitor it.<br>
+</div>
+
+
+<pre><span id="TYPElogger"><span class="keyword">type</span> <code class="type"></code>logger</span> </pre>
+<div class="info ">
+The abstract type representing the logger to be used.<br>
+</div>
+
+
+<pre><code><span id="TYPEmonitor_reason"><span class="keyword">type</span> <code class="type"></code>monitor_reason</span> = </code></pre><table class="typetable">
+<tr>
+<td align="left" valign="top" >
+<code><span class="keyword">|</span></code></td>
+<td align="left" valign="top" >
+<code><span id="TYPEELTmonitor_reason.Normal"><span class="constructor">Normal</span></span> <span class="keyword">of</span> <code class="type"><a href="Distributed.Process_id.html#TYPEt">Distributed.Process_id.t</a></code></code></td>
+<td class="typefieldcomment" align="left" valign="top" ><code>(*</code></td><td class="typefieldcomment" align="left" valign="top" ><div class="info ">
+Process terminated normally.<br>
+</div>
+</td><td class="typefieldcomment" align="left" valign="bottom" ><code>*)</code></td>
+</tr>
+<tr>
+<td align="left" valign="top" >
+<code><span class="keyword">|</span></code></td>
+<td align="left" valign="top" >
+<code><span id="TYPEELTmonitor_reason.Exception"><span class="constructor">Exception</span></span> <span class="keyword">of</span> <code class="type"><a href="Distributed.Process_id.html#TYPEt">Distributed.Process_id.t</a> * exn</code></code></td>
+<td class="typefieldcomment" align="left" valign="top" ><code>(*</code></td><td class="typefieldcomment" align="left" valign="top" ><div class="info ">
+Process terminated with exception.<br>
+</div>
+</td><td class="typefieldcomment" align="left" valign="bottom" ><code>*)</code></td>
+</tr>
+<tr>
+<td align="left" valign="top" >
+<code><span class="keyword">|</span></code></td>
+<td align="left" valign="top" >
+<code><span id="TYPEELTmonitor_reason.UnkownNodeId"><span class="constructor">UnkownNodeId</span></span> <span class="keyword">of</span> <code class="type"><a href="Distributed.Process_id.html#TYPEt">Distributed.Process_id.t</a> * <a href="Distributed.Node_id.html#TYPEt">Distributed.Node_id.t</a></code></code></td>
+<td class="typefieldcomment" align="left" valign="top" ><code>(*</code></td><td class="typefieldcomment" align="left" valign="top" ><div class="info ">
+An operation failed because the remote node id is unknown.<br>
+</div>
+</td><td class="typefieldcomment" align="left" valign="bottom" ><code>*)</code></td>
+</tr>
+<tr>
+<td align="left" valign="top" >
+<code><span class="keyword">|</span></code></td>
+<td align="left" valign="top" >
+<code><span id="TYPEELTmonitor_reason.NoProcess"><span class="constructor">NoProcess</span></span> <span class="keyword">of</span> <code class="type"><a href="Distributed.Process_id.html#TYPEt">Distributed.Process_id.t</a></code></code></td>
+<td class="typefieldcomment" align="left" valign="top" ><code>(*</code></td><td class="typefieldcomment" align="left" valign="top" ><div class="info ">
+Attempted to monitor a process that does not exist.<br>
+</div>
+</td><td class="typefieldcomment" align="left" valign="bottom" ><code>*)</code></td>
+</tr></table>
+
+<div class="info ">
+Reason for process termination.<br>
+</div>
+
+
+<pre><span class="keyword">module</span> <a href="Distributed.Process.Remote_config.html">Remote_config</a>: <code class="code"><span class="keyword">sig</span></code> <a href="Distributed.Process.Remote_config.html">..</a> <code class="code"><span class="keyword">end</span></code></pre><div class="info">
+The configuration of a node to be run as a remote node i.e., one that can both send an receive messages with other nodes.
+</div>
+
+<pre><span class="keyword">module</span> <a href="Distributed.Process.Local_config.html">Local_config</a>: <code class="code"><span class="keyword">sig</span></code> <a href="Distributed.Process.Local_config.html">..</a> <code class="code"><span class="keyword">end</span></code></pre><div class="info">
+The configuration of a node to be run as a local node i.e., one that can not send or receive messages with other nodes.
+</div>
+
+<pre><code><span id="TYPEnode_config"><span class="keyword">type</span> <code class="type"></code>node_config</span> = </code></pre><table class="typetable">
+<tr>
+<td align="left" valign="top" >
+<code><span class="keyword">|</span></code></td>
+<td align="left" valign="top" >
+<code><span id="TYPEELTnode_config.Local"><span class="constructor">Local</span></span> <span class="keyword">of</span> <code class="type"><a href="Distributed.Process.Local_config.html#TYPEt">Local_config.t</a></code></code></td>
+
+</tr>
+<tr>
+<td align="left" valign="top" >
+<code><span class="keyword">|</span></code></td>
+<td align="left" valign="top" >
+<code><span id="TYPEELTnode_config.Remote"><span class="constructor">Remote</span></span> <span class="keyword">of</span> <code class="type"><a href="Distributed.Process.Remote_config.html#TYPEt">Remote_config.t</a></code></code></td>
+
+</tr></table>
+
+<div class="info ">
+The configuration of a node. Can be one of <a href="Distributed.Process.html#TYPEELTnode_config.Local"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.node_config.<span class="constructor">Local</span></code></a> or <a href="Distributed.Process.html#TYPEELTnode_config.Remote"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.node_config.<span class="constructor">Remote</span></code></a>.<br>
+</div>
+
+
+<pre><span id="VALreturn"><span class="keyword">val</span> return</span> : <code class="type">'a -> 'a <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">return v</code> creates a computation returning <code class="code">v</code>.<br>
+</div>
+
+<pre><span id="VAL(>>=)"><span class="keyword">val</span> (&gt;&gt;=)</span> : <code class="type">'a <a href="Distributed.Process.html#TYPEt">t</a> -><br>       ('a -> 'b <a href="Distributed.Process.html#TYPEt">t</a>) -> 'b <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">c &gt;&gt;= f</code> is a computation which first waits for the computation <code class="code">c</code> to terminate and then, if the computation succeeds, 
+      behaves as the application of function <code class="code">f</code> to the return value of <code class="code">c</code>. If the computation <code class="code">c</code> fails, <code class="code">c &gt;&gt;= f</code> also fails, 
+      with the same exception.<br>
+</div>
+
+<pre><span id="VALfail"><span class="keyword">val</span> fail</span> : <code class="type">exn -> 'a <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">fail e</code> is a process that fails with the exception <code class="code">e</code>.<br>
+</div>
+
+<pre><span id="VALcatch"><span class="keyword">val</span> catch</span> : <code class="type">(unit -> 'a <a href="Distributed.Process.html#TYPEt">t</a>) -><br>       (exn -> 'a <a href="Distributed.Process.html#TYPEt">t</a>) -> 'a <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">catch p f</code> is a process that behaves as the process <code class="code">p ()</code> if this process succeeds. 
+      If the process <code class="code">p ()</code> fails with some exception, <code class="code">catch p f</code> behaves as the application of <code class="code">f</code> to this exception.<br>
+</div>
+
+<pre><span id="VALspawn"><span class="keyword">val</span> spawn</span> : <code class="type">?monitor:bool -><br>       <a href="Distributed.Node_id.html#TYPEt">Distributed.Node_id.t</a> -><br>       unit <a href="Distributed.Process.html#TYPEt">t</a> -><br>       (<a href="Distributed.Process_id.html#TYPEt">Distributed.Process_id.t</a> * <a href="Distributed.Process.html#TYPEmonitor_ref">monitor_ref</a> option)<br>       <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">spawn monitor name node_id process</code> will spawn <code class="code">process</code> on <code class="code">node_id</code> returning the <a href="Distributed.Process_id.html#TYPEt"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process_id</span>.t</code></a> associated with the newly spawned process.
+      If <code class="code">monitor</code> is true (default value is false) then the spawned process will also be monitored and the associated <a href="Distributed.Process.html#TYPEmonitor_ref"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.monitor_ref</code></a> will be 
+      returned. 
+<p>
+
+      If <code class="code">node_id</code> is an unknown node then <a href="Distributed.Process.html#EXCEPTIONInvalidNode"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">InvalidNode</span></code></a> exception is raised.<br>
+</div>
+
+<pre><span id="VALcase"><span class="keyword">val</span> case</span> : <code class="type">(<a href="Distributed.Process.html#TYPEmessage_type">message_type</a> -> bool) -><br>       (<a href="Distributed.Process.html#TYPEmessage_type">message_type</a> -> 'a <a href="Distributed.Process.html#TYPEt">t</a>) -><br>       'a <a href="Distributed.Process.html#TYPEmatcher">matcher</a></code></pre><div class="info ">
+<code class="code">case match_fn handler</code> will create a <a href="Distributed.Process.html#TYPEmatcher"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.matcher</code></a> which will use <code class="code">match_fn</code> to match on potential messages and <code class="code">handler</code>
+      to process the matched message .<br>
+</div>
+
+<pre><span id="VALtermination_case"><span class="keyword">val</span> termination_case</span> : <code class="type">(<a href="Distributed.Process.html#TYPEmonitor_reason">monitor_reason</a> -> 'a <a href="Distributed.Process.html#TYPEt">t</a>) -><br>       'a <a href="Distributed.Process.html#TYPEmatcher">matcher</a></code></pre><div class="info ">
+<code class="code">termination_case handler</code> will create a <code class="code">matcher</code> which can use used to match against <code class="code">termination_reason</code> for a 
+      process that is being monitored. If this process is monitoring another process then providing this matcher in the list
+      of matchers to <a href="Distributed.Process.html#VALreceive"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.receive</code></a> will allow this process to act on the termination of the monitored process.
+<p>
+
+      NOTE : when a remote process (i.e., one running on another node) raises an exception you will not be able 
+      to pattern match on the exception . This is a limitation of the Marshal OCaml module : 
+      " Values of extensible variant types, for example exceptions (of extensible type exn), returned by the unmarshaller 
+        should not be pattern-matched over through <code class="code"><span class="keyword">match</span> ... <span class="keyword">with</span></code> or <code class="code"><span class="keyword">try</span> ... <span class="keyword">with</span></code>, because unmarshalling does not preserve the 
+        information required for matching their constructors. Structural equalities with other extensible variant values does not work either. 
+        Most other uses such as Printexc.to_string, will still work as expected. "
+<p>
+
+      See http://caml.inria.fr/pub/docs/manual-ocaml/libref/Marshal.html.<br>
+</div>
+
+<pre><span id="VALreceive"><span class="keyword">val</span> receive</span> : <code class="type">?timeout_duration:float -><br>       'a <a href="Distributed.Process.html#TYPEmatcher">matcher</a> list -> 'a option <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">receive timeout matchers</code> will wait for a message to be sent to this process which matches one of matchers provided in
+      <code class="code">matchers</code>. The first matching matcher in <code class="code">matchers</code> will used process the matching message returning <code class="code"><span class="constructor">Some</span> result</code> where
+      <code class="code">result</code> is result of the matcher processing the matched message. All the other non-matching messages are left in the same
+      order they came in.
+<p>
+
+      If a time out is provided and no matching messages has arrived in the time out period then None will be returned.
+<p>
+
+      If the <code class="code">matchers</code> is empty then an <a href="Distributed.Process.html#EXCEPTIONEmpty_matchers"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">Empty_matchers</span></code></a> exception is raised.<br>
+</div>
+
+<pre><span id="VALreceive_loop"><span class="keyword">val</span> receive_loop</span> : <code class="type">?timeout_duration:float -><br>       bool <a href="Distributed.Process.html#TYPEmatcher">matcher</a> list -> unit <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">receive_loop timeout matchers</code> is a convenience function which will loop until a matcher in <code class="code">matchers</code> returns false.<br>
+</div>
+
+<pre><span id="VALsend"><span class="keyword">val</span> send</span> : <code class="type"><a href="Distributed.Process_id.html#TYPEt">Distributed.Process_id.t</a> -><br>       <a href="Distributed.Process.html#TYPEmessage_type">message_type</a> -> unit <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">send process_id msg</code> will send, asynchronously, message <code class="code">msg</code> to the process with id <code class="code">process_id</code> (possibly running on a remote node).
+<p>
+
+      If <code class="code">process_id</code> is resides on an unknown node then <a href="Distributed.Process.html#EXCEPTIONInvalidNode"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">InvalidNode</span></code></a> exception is raised.
+<p>
+
+      If <code class="code">process_id</code> is an unknown process but the node on which it resides is known then send will still succeed (i.e., will not raise any exceptions).<br>
+</div>
+
+<pre><span id="VAL(>!)"><span class="keyword">val</span> (&gt;!)</span> : <code class="type"><a href="Distributed.Process_id.html#TYPEt">Distributed.Process_id.t</a> -><br>       <a href="Distributed.Process.html#TYPEmessage_type">message_type</a> -> unit <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">pid &gt;! msg</code> is equivalent to <code class="code">send pid msg</code>. <code class="code">&gt;!</code> is an infix alias for <code class="code">send</code>.<br>
+</div>
+
+<pre><span id="VALbroadcast"><span class="keyword">val</span> broadcast</span> : <code class="type"><a href="Distributed.Node_id.html#TYPEt">Distributed.Node_id.t</a> -><br>       <a href="Distributed.Process.html#TYPEmessage_type">message_type</a> -> unit <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">broadcast node_id msg</code> will send, asynchronously, message <code class="code">msg</code> to all the processes on <code class="code">node_id</code>. 
+<p>
+
+      If <code class="code">node_id</code> is an unknown node then <a href="Distributed.Process.html#EXCEPTIONInvalidNode"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">InvalidNode</span></code></a> exception is raised.<br>
+</div>
+
+<pre><span id="VALmonitor"><span class="keyword">val</span> monitor</span> : <code class="type"><a href="Distributed.Process_id.html#TYPEt">Distributed.Process_id.t</a> -><br>       <a href="Distributed.Process.html#TYPEmonitor_ref">monitor_ref</a> <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">monitor pid</code> will allows the calling process to monitor <code class="code">pid</code>. When <code class="code">pid</code> terminates (normally or abnormally) this monitoring
+      process will receive a <code class="code">termination_reason</code> message, which can be matched in <code class="code">receive</code> using <code class="code">termination_matcher</code>. A single
+      process can be monitored my multiple processes.  
+<p>
+
+      If <code class="code">process_id</code> is resides on an unknown node then <a href="Distributed.Process.html#EXCEPTIONInvalidNode"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">InvalidNode</span></code></a> exception is raised.<br>
+</div>
+
+<pre><span id="VALunmonitor"><span class="keyword">val</span> unmonitor</span> : <code class="type"><a href="Distributed.Process.html#TYPEmonitor_ref">monitor_ref</a> -> unit <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">unmonitor mref</code> will cause this process to stop monitoring the process which is referenced by <code class="code">mref</code>.
+      If the current process is not monitoring the process referenced by <code class="code">mref</code> then <code class="code">unmonitor</code> is a no-op.<br>
+</div>
+
+<pre><span id="VALget_self_pid"><span class="keyword">val</span> get_self_pid</span> : <code class="type"><a href="Distributed.Process_id.html#TYPEt">Distributed.Process_id.t</a> <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">get_self_pid process</code> will return the process id associated with <code class="code">process</code>.<br>
+</div>
+
+<pre><span id="VALget_self_node"><span class="keyword">val</span> get_self_node</span> : <code class="type"><a href="Distributed.Node_id.html#TYPEt">Distributed.Node_id.t</a> <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">get_self_node process</code> will return the node id associated with <code class="code">process</code>.<br>
+</div>
+
+<pre><span id="VALget_remote_node"><span class="keyword">val</span> get_remote_node</span> : <code class="type">string -> <a href="Distributed.Node_id.html#TYPEt">Distributed.Node_id.t</a> option <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">get_remote_node node_name</code> will return the node id associated with <code class="code">name</code>, if there is no record of a node with <code class="code">name</code> at 
+      this time then <code class="code"><span class="constructor">None</span></code> is returned.<br>
+</div>
+
+<pre><span id="VALget_remote_nodes"><span class="keyword">val</span> get_remote_nodes</span> : <code class="type"><a href="Distributed.Node_id.html#TYPEt">Distributed.Node_id.t</a> list <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+The list of all nodes currently active and inactive.<br>
+</div>
+
+<pre><span id="VALadd_remote_node"><span class="keyword">val</span> add_remote_node</span> : <code class="type">string -> int -> string -> <a href="Distributed.Node_id.html#TYPEt">Distributed.Node_id.t</a> <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">add_remote_node ip port name</code> will connect to the remote node at <code class="code">ip</code>:<code class="code">port</code> with name <code class="code">name</code> and add it to the current nodes list of connected remote nodes.
+      The newly added node id is returned as the result. 
+<p>
+
+      If the node is operating in local only mode then <a href="Distributed.Process.html#EXCEPTIONLocal_only_mode"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">Local_only_mode</span></code></a> is raised.<br>
+</div>
+
+<pre><span id="VALremove_remote_node"><span class="keyword">val</span> remove_remote_node</span> : <code class="type"><a href="Distributed.Node_id.html#TYPEt">Distributed.Node_id.t</a> -> unit <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">remove_remote_node node_id</code> will remove <code class="code">node_id</code> from the list of connected remote nodes.
+<p>
+
+      If the node is operating in local only mode then <a href="Distributed.Process.html#EXCEPTIONLocal_only_mode"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">Local_only_mode</span></code></a> is raised.<br>
+</div>
+
+<pre><span id="VALlift_io"><span class="keyword">val</span> lift_io</span> : <code class="type">'a <a href="Distributed.Process.html#TYPEio">io</a> -> 'a <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
+<code class="code">lift_io io</code> lifts the <code class="code">io</code> computation into the process.<br>
+</div>
+
+<pre><span id="VALrun_node"><span class="keyword">val</span> run_node</span> : <code class="type">?process:unit <a href="Distributed.Process.html#TYPEt">t</a> -><br>       <a href="Distributed.Process.html#TYPEnode_config">node_config</a> -> unit <a href="Distributed.Process.html#TYPEio">io</a></code></pre><div class="info ">
+<code class="code">run_node process node_config</code> performs the necessary bootstrapping to start this node according to <code class="code">node_config</code>, 
+      then, if provided, runs the initial <code class="code">process</code> returning the resulting <code class="code">io</code>).
+<p>
+
+      If it's called more than once then an exception of <a href="Distributed.Process.html#EXCEPTIONInit_more_than_once"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">Init_more_than_once</span></code></a> is raised.<br>
+</div>
+</body></html>
