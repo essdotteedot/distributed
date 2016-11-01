@@ -256,7 +256,7 @@ module type Process = sig
 
   val lift_io : 'a io -> 'a t    
 
-  val run_node : ?process:unit t -> node_config -> unit io
+  val run_node : ?process:unit t -> ?node_monitor_fn:(Node_id.t -> unit t) -> node_config -> unit io
 
 end
 
@@ -334,6 +334,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                      logger                   : I.logger ;
                      monitor_ref_id           : int ref ;
                      config                   : Remote_config.t option ref ;
+                     node_mon_fn              : (Node_id.t -> unit t) option
                    }                   
 
   and 'a t = (node_state * Process_id.t) -> (node_state * Process_id.t * 'a) io                    
@@ -500,6 +501,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       )         
       (fun e -> 
          log_msg ns ~exn:e ~level:Error "process failed with error" (Process_id.string_of_pid pid) >>= fun () ->
+         Hashtbl.remove ns.mailboxes (Process_id.get_id pid) ;
          begin
            match e with
            | InvalidNode n -> 
@@ -513,8 +515,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                ((Potpourri.of_option @@ fun () -> Process_id_hashtbl.find ns.monitor_table pid)) 
                (Exception (pid,e))
          end >>= fun () ->
-         Process_id_hashtbl.remove ns.monitor_table pid ;
-         return @@ Hashtbl.remove ns.mailboxes (Process_id.get_id pid) ;
+         return @@ Process_id_hashtbl.remove ns.monitor_table pid 
       )
 
   let sync_send pid ns ?flags out_ch msg_create_fn response_fn =
@@ -561,19 +562,21 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       mref          
 
   let monitor_local (ns : node_state) (monitor_pid : Process_id.t) (monitee_pid : Process_id.t) : monitor_ref =
-    monitor_response_handler ns @@ monitor_helper ns monitor_pid monitee_pid 
+    monitor_response_handler ns @@ monitor_helper ns monitor_pid monitee_pid
+
+  let make_new_pid (node_to_spwan_on : Node_id.t) (ns : node_state) : Process_id.t =
+    if !(ns.config) = None 
+    then Process_id.make_local (Node_id.get_name node_to_spwan_on) 
+    else
+      let remote_config = Potpourri.get_option !(ns.config) in 
+      Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name   
 
   let spawn ?(monitor=false) (node_id : Node_id.t) (p : unit t) : (Process_id.t * monitor_ref option) t =
     let open I in 
     fun (ns,pid) ->
       if Node_id.is_local node_id ns.local_node
       then
-        let new_pid = 
-          if !(ns.config) = None 
-          then Process_id.make_local (Node_id.get_name node_id) 
-          else
-            let remote_config = Potpourri.get_option !(ns.config) in 
-            Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name in            
+        let new_pid = make_new_pid node_id ns in                      
         Hashtbl.replace ns.mailboxes (Process_id.get_id new_pid) (I.create_stream ()) ;
         if monitor
         then
@@ -713,19 +716,19 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                  (Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->
                return (ns', pid', res)
             )
-            (function 
-              | Timeout -> 
-                begin
-                  restore_mailbox ns pid ;
-                  log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "receive timed out" 
-                    (Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->
-                  return (ns,pid, None)
-                end
-              | e ->
-                restore_mailbox ns pid ;
-                log_msg ~pid:(Process_id.get_id pid) ns ~exn:e ~level:Error "receiving with time out failed" 
-                  (Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->
-                fail e
+            (fun e ->
+               restore_mailbox ns pid ;
+               match e with 
+               | Timeout -> 
+                 begin
+                   log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "receive timed out" 
+                     (Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->
+                   return (ns,pid, None)
+                 end
+               | e ->
+                 log_msg ~pid:(Process_id.get_id pid) ns ~exn:e ~level:Error "receiving with time out failed" 
+                   (Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->
+                 fail e
             ) 
 
   let rec receive_loop ?timeout_duration (matchers : bool matcher list) : unit t =
@@ -1153,7 +1156,14 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
            | Some out_ch -> 
              begin 
                Node_id_hashtbl.remove ns.remote_nodes node ; 
-               async @@ fun () -> close_output out_ch
+               async (fun () -> close_output out_ch) ;
+               async 
+                 (fun () ->
+                    match ns.node_mon_fn with
+                    | None -> return ()
+                    | Some f ->
+                      (f node) (ns,make_new_pid ns.local_node ns) >>= fun _ -> return ()                    
+                 ) 
              end 
          else ()
       ) 
@@ -1161,7 +1171,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     Node_id_hashtbl.clear ns.remote_nodes_heart_beats ;    
     process_remote_heart_beats_timeout_fn ns heat_beat_timeout  
 
-  let run_node ?process (node_config : node_config) : unit io =
+  let run_node ?process ?node_monitor_fn (node_config : node_config) : unit io =
     let open I in
     if !initalised
     then fail Init_more_than_once
@@ -1178,6 +1188,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                      logger                   = local_config.Local_config.logger ;
                      monitor_ref_id           = ref 0 ;
                      config                   = ref None ;
+                     node_mon_fn              = node_monitor_fn ;
                    } in
           log_msg ns ~level:Info "node start up" 
             (Format.sprintf "{Distributed library version : %s ; Threading implementation : [name : %s ; version : %s ; description : %s]}" 
@@ -1200,6 +1211,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                      logger                   = remote_config.Remote_config.logger ;
                      monitor_ref_id           = ref 0 ;
                      config                   = ref (Some remote_config) ;
+                     node_mon_fn              = node_monitor_fn ;
                    } in
           log_msg ns ~level:Info "node start up" 
             (Format.sprintf "{Distributed library version : %s ; Threading implementation : [name : %s ; version : %s ; description : %s]}" 

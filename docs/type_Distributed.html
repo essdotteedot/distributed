@@ -183,6 +183,7 @@
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;lift_io&nbsp;:&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.io&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;run_node&nbsp;:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;?process:unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;?node_monitor_fn:(<span class="constructor">Distributed</span>.<span class="constructor">Node_id</span>.t&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t)&nbsp;<span class="keywordsign">-&gt;</span><br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.node_config&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.io<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">end</span><br>
 &nbsp;&nbsp;<span class="keyword">module</span>&nbsp;<span class="constructor">Make</span>&nbsp;:<br>
@@ -247,6 +248,8 @@
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;add_remote_node&nbsp;:&nbsp;string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;int&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Node_id</span>.t&nbsp;t<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;remove_remote_node&nbsp;:&nbsp;<span class="constructor">Node_id</span>.t&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;t<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;lift_io&nbsp;:&nbsp;<span class="keywordsign">'</span>a&nbsp;io&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;t<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;run_node&nbsp;:&nbsp;?process:unit&nbsp;t&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;node_config&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;io<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;run_node&nbsp;:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;?process:unit&nbsp;t&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;?node_monitor_fn:(<span class="constructor">Node_id</span>.t&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;t)&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;node_config&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;io<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">end</span><br>
 <span class="keyword">end</span></code></body></html>

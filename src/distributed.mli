@@ -6,6 +6,15 @@
     @version 0.3.0
 *)
 
+(** Some nomenclature :
+    - Node : A node corresponds to a operating system process. There can be many nodes on a
+             a single machine. 
+
+    - Process : A process corresponds to a light weight thread (i.e., user space cooperative threads).
+                There can be many processes on a single Node.                                      
+
+*)
+
 (** This module provides a type representing a node id. *) 
 module Node_id : sig
 
@@ -337,9 +346,11 @@ module type Process = sig
   val lift_io : 'a io -> 'a t
   (** [lift_io io] lifts the [io] computation into the process. *)
 
-  val run_node : ?process:unit t -> node_config -> unit io
-  (** [run_node process node_config] performs the necessary bootstrapping to start this node according to [node_config], 
-      then, if provided, runs the initial [process] returning the resulting [io]).
+  val run_node : ?process:unit t -> ?node_monitor_fn:(Node_id.t -> unit t) -> node_config -> unit io
+  (** [run_node process node_monitor_fn node_config] performs the necessary bootstrapping to start this 
+      node according to [node_config], then, if provided, runs the initial [process] returning the resulting [io]).
+      If [node_monitor_fn] is provided then whenever a remote node goes down (stop receiving heartbeats) the 
+      provided [node_monitor_fn] is called with the node that went down.
 
       If it's called more than once then an exception of {!exception:Init_more_than_once} is raised. 
   *)

@@ -28,6 +28,16 @@ This module provides modules to create distribtued computations.
 <b>Version:</b> 0.3.0<br>
 </div>
 <hr width="100%">
+<br>
+Some nomenclature :<ul>
+<li>Node : A node corresponds to a operating system process. There can be many nodes on a
+             a single machine. </li>
+</ul>
+<ul>
+<li>Process : A process corresponds to a light weight thread (i.e., user space cooperative threads).
+                There can be many processes on a single Node.</li>
+</ul>
+<br>
 
 <pre><span class="keyword">module</span> <a href="Distributed.Node_id.html">Node_id</a>: <code class="code"><span class="keyword">sig</span></code> <a href="Distributed.Node_id.html">..</a> <code class="code"><span class="keyword">end</span></code></pre><div class="info">
 This module provides a type representing a node id.

@@ -296,9 +296,11 @@ The list of all nodes currently active and inactive.<br>
 <code class="code">lift_io io</code> lifts the <code class="code">io</code> computation into the process.<br>
 </div>
 
-<pre><span id="VALrun_node"><span class="keyword">val</span> run_node</span> : <code class="type">?process:unit <a href="Distributed.Process.html#TYPEt">t</a> -><br>       <a href="Distributed.Process.html#TYPEnode_config">node_config</a> -> unit <a href="Distributed.Process.html#TYPEio">io</a></code></pre><div class="info ">
-<code class="code">run_node process node_config</code> performs the necessary bootstrapping to start this node according to <code class="code">node_config</code>, 
-      then, if provided, runs the initial <code class="code">process</code> returning the resulting <code class="code">io</code>).
+<pre><span id="VALrun_node"><span class="keyword">val</span> run_node</span> : <code class="type">?process:unit <a href="Distributed.Process.html#TYPEt">t</a> -><br>       ?node_monitor_fn:(<a href="Distributed.Node_id.html#TYPEt">Distributed.Node_id.t</a> -> unit <a href="Distributed.Process.html#TYPEt">t</a>) -><br>       <a href="Distributed.Process.html#TYPEnode_config">node_config</a> -> unit <a href="Distributed.Process.html#TYPEio">io</a></code></pre><div class="info ">
+<code class="code">run_node process node_monitor_fn node_config</code> performs the necessary bootstrapping to start this 
+      node according to <code class="code">node_config</code>, then, if provided, runs the initial <code class="code">process</code> returning the resulting <code class="code">io</code>).
+      If <code class="code">node_monitor_fn</code> is provided then whenever a remote node goes down (stop receiving heartbeats) the 
+      provided <code class="code">node_monitor_fn</code> is called with the node that went down.
 <p>
 
       If it's called more than once then an exception of <a href="Distributed.Process.html#EXCEPTIONInit_more_than_once"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">Init_more_than_once</span></code></a> is raised.<br>
