@@ -665,6 +665,11 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     let temp_stream,temp_push_fn = create_stream () in
     let result = ref None in
 
+    let restore_mailbox ns pid =
+      let mailbox',old_push_fn = Hashtbl.find ns.mailboxes (Process_id.get_id pid) in
+      temp_push_fn None ; (* close new stream so we can append new and old *)
+      Hashtbl.replace ns.mailboxes (Process_id.get_id pid) (stream_append temp_stream mailbox', old_push_fn) in        
+
     let rec iter_fn match_fns candidate_msg =
       match match_fns with
       | [] -> (temp_push_fn (Some candidate_msg)) ; false
@@ -680,16 +685,9 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     let do_receive_blocking (ns,pid) =     
       let mailbox,_ = Hashtbl.find ns.mailboxes (Process_id.get_id pid) in 
       iter_stream (iter_fn matchers) mailbox >>= fun () ->
-      let mailbox',old_push_fn = Hashtbl.find ns.mailboxes (Process_id.get_id pid) in
-      old_push_fn None ; (* mark end of old stream so we can append new and old *)
-      Hashtbl.replace ns.mailboxes (Process_id.get_id pid) (stream_append mailbox' temp_stream, temp_push_fn) ; 
+      restore_mailbox ns pid ; 
       (Potpourri.get_option !result) (ns,pid) >>= fun (ns', pid', result') -> 
       return (ns', pid', Some result') in
-
-    let restore_mailbox ns pid =
-      let mailbox',old_push_fn = Hashtbl.find ns.mailboxes (Process_id.get_id pid) in
-      old_push_fn None ; (* close old stream so we can append new and old *)
-      Hashtbl.replace ns.mailboxes (Process_id.get_id pid) (stream_append mailbox' temp_stream, temp_push_fn) in  
 
     fun (ns,pid) ->
       if matchers = []
