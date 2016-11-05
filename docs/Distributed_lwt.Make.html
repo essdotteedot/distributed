@@ -291,7 +291,7 @@ The list of all nodes currently active and inactive.<br>
 
 <pre><span id="VALadd_remote_node"><span class="keyword">val</span> add_remote_node</span> : <code class="type">string -> int -> string -> <a href="Distributed.Node_id.html#TYPEt">Distributed.Node_id.t</a> <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
 <code class="code">add_remote_node ip port name</code> will connect to the remote node at <code class="code">ip</code>:<code class="code">port</code> with name <code class="code">name</code> and add it to the current nodes list of connected remote nodes.
-      The newly added node id is returned as the result. 
+      The newly added node id is returned as the result. Adding a remote node that already exists is a no-op.
 <p>
 
       If the node is operating in local only mode then <a href="Distributed.Process.html#EXCEPTIONLocal_only_mode"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">Local_only_mode</span></code></a> is raised.<br>

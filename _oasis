@@ -54,25 +54,46 @@ Flag examples
   Default: false              
 
 Executable "basic"
-  Path: examples
+  Path: examples/basic_example
   MainIs: basic.ml
   Build$: flag(examples) && flag(lwt)
   CompiledObject: native
   BuildDepends: distributed.lwt
 
 Executable "ping"
-  Path: examples
+  Path: examples/ping_pong_example
   MainIs: ping.ml
   Build$: flag(examples) && flag(lwt)
   CompiledObject: native
   BuildDepends: distributed.lwt
 
 Executable "pong"
-  Path: examples
+  Path: examples/ping_pong_example
   MainIs: pong.ml
   Build$: flag(examples) && flag(lwt)
   CompiledObject: native
-  BuildDepends: distributed.lwt        
+  BuildDepends: distributed.lwt  
+
+Executable "name_server"
+  Path: examples/name_server_example
+  MainIs: name_server.ml
+  Build$: flag(examples) && flag(lwt)
+  CompiledObject: native
+  BuildDepends: distributed.lwt
+
+Executable "add_server"
+  Path: examples/name_server_example
+  MainIs: add_server.ml
+  Build$: flag(examples) && flag(lwt)
+  CompiledObject: native
+  BuildDepends: distributed.lwt
+
+Executable "add_client"
+  Path: examples/name_server_example
+  MainIs: add_client.ml
+  Build$: flag(examples) && flag(lwt)
+  CompiledObject: native
+  BuildDepends: distributed.lwt              
 
 AlphaFeatures: ocamlbuild_more_args
 Document "distributed-api"

@@ -332,7 +332,7 @@ module type Process = sig
 
   val add_remote_node : string -> int -> string -> Node_id.t t
   (** [add_remote_node ip port name] will connect to the remote node at [ip]:[port] with name [name] and add it to the current nodes list of connected remote nodes.
-      The newly added node id is returned as the result. 
+      The newly added node id is returned as the result. Adding a remote node that already exists is a no-op.
 
       If the node is operating in local only mode then {!exception:Local_only_mode} is raised.
   *)

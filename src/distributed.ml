@@ -343,7 +343,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
   let initalised = ref false    
 
-  let dist_lib_version = "0.3.0"                           
+  let dist_lib_version = "0.3.0"       
 
   let string_of_termination_reason (reason : monitor_reason) : string =
     match reason with
@@ -426,6 +426,17 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
           (Node_id.string_of_node ns.local_node) (Potpourri.get_option pid) action details 
     in
     I.log ~logger:(ns.logger) ~level ?exn msg
+
+  let safe_close_channel (ns : node_state) (ch : [`Out of I.output_channel | `In of I.input_channel]) 
+      (action : string) (details : string) : unit I.t =
+    let open I in
+    catch 
+      (fun () -> 
+         match ch with
+         | `Out out_ch -> close_output out_ch
+         | `In in_ch -> close_input in_ch
+      )  
+      (fun e -> log_msg ns ~level:Warning ~exn:e action details)                      
 
   let return (v : 'a) : 'a t = 
     fun (ns,pid) -> I.return (ns,pid, v)
@@ -926,7 +937,19 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
     let clean_up_fn () =
       begin 
-        async (fun () -> close_input in_ch >>= fun () -> close_output out_ch) ;
+        async (
+          fun () ->           
+            let out_details = 
+              if !node <> None 
+              then Format.sprintf "encountered error while closing output channel for remote node %s" (Node_id.string_of_node (Potpourri.get_option !node))  
+              else "encountered error while closing output channel" in
+            let in_details = 
+              if !node <> None 
+              then Format.sprintf "encountered error while closing input channel for remote node %s" (Node_id.string_of_node (Potpourri.get_option !node)) 
+              else "encountered error while closing input channel" in
+            safe_close_channel ns (`In in_ch) "node clean up" out_details >>= fun () ->
+            safe_close_channel ns (`Out out_ch) "node clean up" in_details 
+        ) ;
         if !node = None then () else Node_id_hashtbl.remove ns.remote_nodes (Potpourri.get_option !node)                
       end in
 
@@ -1087,13 +1110,18 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       then
         log_msg ~pid:(Process_id.get_id pid) ns ~level:Error "add remote node" 
           "called add remote node when node is running with local only configuration" >>= fun () ->  
-        fail Local_only_mode
+        fail Local_only_mode        
       else
         log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "adding remote node" (Format.sprintf "%s:%d, name %s" ip port name) >>= fun () ->
         let remote_sock_addr = Unix.ADDR_INET (Unix.inet_addr_of_string ip,port) in
-        let remote_node = Node_id.make_remote_node ip port name in 
-        connect_to_remote_nodes_unsafe ns remote_node ip port name remote_sock_addr >>= fun () ->
-        return (ns, pid, remote_node)
+        let remote_node = Node_id.make_remote_node ip port name in
+        if Node_id_hashtbl.mem ns.remote_nodes remote_node
+        then  
+          log_msg ~pid:(Process_id.get_id pid) ns ~level:Warning "remote node already exists" (Format.sprintf "%s:%d, name %s" ip port name) >>= fun () ->
+          return (ns, pid, remote_node)
+        else 
+          connect_to_remote_nodes_unsafe ns remote_node ip port name remote_sock_addr >>= fun () ->
+          return (ns, pid, remote_node)
 
   let remove_remote_node  (node : Node_id.t) : unit t =
     let open I in
@@ -1136,7 +1164,9 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         )
         (fun e -> 
            log_msg ns ~exn:e ~level:Error "sending heartbeat" (Format.sprintf "failed for node %s" @@ Node_id.string_of_node node) >>= fun () ->
-           close_output out_ch >>= fun () ->
+           safe_close_channel ns (`Out out_ch) "sending heartbeat" 
+             (Format.sprintf "encountered error while closing output channel for remote node %s after sending heart beat failed" 
+              @@ Node_id.string_of_node node) >>= fun () ->
            return @@ Node_id_hashtbl.remove ns.remote_nodes node                
         ) 
     in
@@ -1156,13 +1186,22 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
            | Some out_ch -> 
              begin 
                Node_id_hashtbl.remove ns.remote_nodes node ; 
-               async (fun () -> close_output out_ch) ;
+               async 
+                 (fun () ->
+                    safe_close_channel ns (`Out out_ch) "node heartbeat process" 
+                      (Format.sprintf "encountered error while closing output channel for remote node %s after heat beat not received in time" 
+                       @@ Node_id.string_of_node node)                    
+                 ) ;
                async 
                  (fun () ->
                     match ns.node_mon_fn with
                     | None -> return ()
                     | Some f ->
-                      (f node) (ns,make_new_pid ns.local_node ns) >>= fun _ -> return ()                    
+                      catch 
+                        (fun () -> (f node) (ns,make_new_pid ns.local_node ns) >>= fun _ -> return ())
+                        (fun e -> log_msg ns ~exn:e ~level:Error "node heartbeat process" 
+                            (Format.sprintf "encountered error while running node monitor function for remote node %s after heat beat not received in time" 
+                             @@ Node_id.string_of_node node))                    
                  ) 
              end 
          else ()
