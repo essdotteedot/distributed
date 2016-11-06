@@ -244,7 +244,7 @@ module type Process = sig
       If the process [p ()] fails with some exception, [catch p f] behaves as the application of [f] to this exception. 
   *)
 
-  val spawn : ?monitor:bool -> Node_id.t -> unit t -> (Process_id.t * monitor_ref option) t
+  val spawn : ?monitor:bool -> Node_id.t -> (unit -> unit t) -> (Process_id.t * monitor_ref option) t
   (** [spawn monitor name node_id process] will spawn [process] on [node_id] returning the {!type:Process_id.t} associated with the newly spawned process.
       If [monitor] is true (default value is false) then the spawned process will also be monitored and the associated {!type:monitor_ref} will be 
       returned. 
@@ -346,7 +346,7 @@ module type Process = sig
   val lift_io : 'a io -> 'a t
   (** [lift_io io] lifts the [io] computation into the process. *)
 
-  val run_node : ?process:unit t -> ?node_monitor_fn:(Node_id.t -> unit t) -> node_config -> unit io
+  val run_node : ?process:(unit -> unit t) -> ?node_monitor_fn:(Node_id.t -> unit t) -> node_config -> unit io
   (** [run_node process node_monitor_fn node_config] performs the necessary bootstrapping to start this 
       node according to [node_config], then, if provided, runs the initial [process] returning the resulting [io]).
       If [node_monitor_fn] is provided then whenever a remote node goes down (stop receiving heartbeats) the 

@@ -44,4 +44,4 @@ let pong () = D.(
   )
 
 let () =
-  Lwt.(Lwt_main.run (D.run_node ~process:(pong()) config >>= fun () -> fst @@ wait ()))    
+  Lwt.(Lwt_main.run ((D.run_node ~process:pong config) >>= fun () -> fst @@ wait ()))    

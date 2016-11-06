@@ -30,7 +30,7 @@ let config = D.Remote { D.Remote_config.node_name = "add_server" ;
                         D.Remote_config.remote_nodes = [] ; (* we will add nodes dynamically*)
                       } 
 
-let process_add_request name_server_node = D.(
+let process_add_request name_server_node () = D.(
     get_self_pid >>= fun self_pid ->    
     lift_io (Lwt_io.printl "Add process is registering itself with the name server.") >>= fun () ->
     broadcast name_server_node (Message.Register ("add_process", self_pid)) >>= fun () ->
@@ -84,5 +84,5 @@ let rec main_proc () = D.(
   )  
 
 let () =
-  Lwt_main.run (D.run_node ~process:(D.(main_proc () >>= fun _ -> return ())) config)
+  Lwt_main.run (D.run_node ~process:(D.(fun () -> main_proc () >>= fun _ -> return ())) config)
 

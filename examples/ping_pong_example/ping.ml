@@ -14,7 +14,7 @@ let config = D.Remote { D.Remote_config.node_name = "ping_node" ;
                         D.Remote_config.remote_nodes = [("127.0.0.1",47000,"pong_node")] ;
                       }                        
 
-let rec ping_loop (counter : int) = D.(
+let rec ping_loop (counter : int) () = D.(
     get_remote_node "pong_node" >>= function
     | None -> lift_io (Lwt_io.printl "Remote node pong is not up, exiting")
     | Some node' ->         
@@ -32,7 +32,7 @@ let rec ping_loop (counter : int) = D.(
           )  
       ] >>= fun _ ->    
       lift_io (Lwt_unix.sleep 1.0) >>= fun () ->  
-      ping_loop (counter + 1)
+      ping_loop (counter + 1) ()
   )
 
 let () =

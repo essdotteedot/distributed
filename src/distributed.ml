@@ -222,7 +222,7 @@ module type Process = sig
 
   val catch : (unit -> 'a t) -> (exn -> 'a t) -> 'a t        
 
-  val spawn : ?monitor:bool -> Node_id.t -> unit t -> (Process_id.t * monitor_ref option) t 
+  val spawn : ?monitor:bool -> Node_id.t -> (unit -> unit t) -> (Process_id.t * monitor_ref option) t 
 
   val case : (message_type -> bool) -> (message_type -> 'a t) -> 'a matcher
 
@@ -256,7 +256,7 @@ module type Process = sig
 
   val lift_io : 'a io -> 'a t    
 
-  val run_node : ?process:unit t -> ?node_monitor_fn:(Node_id.t -> unit t) -> node_config -> unit io
+  val run_node : ?process:(unit -> unit t) -> ?node_monitor_fn:(Node_id.t -> unit t) -> node_config -> unit io
 
 end
 
@@ -582,7 +582,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       let remote_config = Potpourri.get_option !(ns.config) in 
       Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name   
 
-  let spawn ?(monitor=false) (node_id : Node_id.t) (p : unit t) : (Process_id.t * monitor_ref option) t =
+  let spawn ?(monitor=false) (node_id : Node_id.t) (p : (unit -> unit t)) : (Process_id.t * monitor_ref option) t =
     let open I in 
     fun (ns,pid) ->
       if Node_id.is_local node_id ns.local_node
@@ -593,14 +593,14 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         then
           begin
             let monitor_res = monitor_local ns pid new_pid in
-            async (fun () -> run_process' ns new_pid p) ;           
+            async (fun () -> run_process' ns new_pid (p ())) ;           
             log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawned and monitored local process" 
               ((Format.sprintf "result pid %s, result monitor reference : %s") (Process_id.string_of_pid new_pid) (string_of_monitor_ref monitor_res)) >>= fun () -> 
             return (ns,pid,(new_pid, Some monitor_res))
           end
         else 
           begin 
-            async (fun () -> run_process' ns new_pid p) ;           
+            async (fun () -> run_process' ns new_pid (p ())) ;           
             log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawned local process" 
               (Format.sprintf "result pid %s" (Process_id.string_of_pid new_pid)) >>= fun () ->
             return (ns,pid,(new_pid, None))
@@ -613,7 +613,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             begin
               log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawning and monitoring remote process" 
                 (Format.sprintf "on remote node %s, local process %s" (Node_id.string_of_node node_id) (Process_id.string_of_pid pid)) >>= fun () ->
-              sync_send (Process_id.get_id pid) ns ~flags:[Marshal.Closures] out_ch (fun receiver_pid -> (Spawn_monitor (p,pid,receiver_pid))) 
+              sync_send (Process_id.get_id pid) ns ~flags:[Marshal.Closures] out_ch (fun receiver_pid -> (Spawn_monitor (p (),pid,receiver_pid))) 
                 (fun res ->
                    let Monitor_Ref (_,_,monitored_proc) as mref = match res with Spawn_monitor_result (_,mr,_) -> mr | _ -> assert false in
                    log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawned and monitored remote process" 
@@ -626,7 +626,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             begin
               log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawning remote process" 
                 (Format.sprintf "on remote node %s, local process %s" (Node_id.string_of_node node_id) (Process_id.string_of_pid pid)) >>= fun () ->
-              sync_send (Process_id.get_id pid) ns ~flags:[Marshal.Closures] out_ch (fun receiver_pid -> (Proc (p,receiver_pid))) 
+              sync_send (Process_id.get_id pid) ns ~flags:[Marshal.Closures] out_ch (fun receiver_pid -> (Proc (p (),receiver_pid))) 
                 (fun res ->
                    let remote_proc_pid = match res with Proc_result (r,_) -> r | _ -> assert false in 
                    log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawned remote process" 
@@ -664,19 +664,26 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     let open I in
     let temp_stream,temp_push_fn = create_stream () in
     let result = ref None in
+    let mailbox_cleaned_up = ref false in
 
     let restore_mailbox ns pid =
+      mailbox_cleaned_up := true ;
       let mailbox',old_push_fn = Hashtbl.find ns.mailboxes (Process_id.get_id pid) in
       temp_push_fn None ; (* close new stream so we can append new and old *)
       Hashtbl.replace ns.mailboxes (Process_id.get_id pid) (stream_append temp_stream mailbox', old_push_fn) in        
 
-    let rec iter_fn match_fns candidate_msg =
+    let rec iter_fn ns pid match_fns candidate_msg =
       match match_fns with
       | [] -> (temp_push_fn (Some candidate_msg)) ; false
       | (matcher,handler)::xs -> 
         if matcher candidate_msg
-        then (result := Some (handler candidate_msg) ; true)                       
-        else iter_fn xs candidate_msg in
+        then 
+          begin
+            restore_mailbox ns pid ; 
+            result := Some (handler candidate_msg) ; 
+            true
+          end                       
+        else iter_fn ns pid xs candidate_msg in
 
     let rec iter_stream iter_fn stream =
       get stream >>= fun v ->
@@ -684,8 +691,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
     let do_receive_blocking (ns,pid) =     
       let mailbox,_ = Hashtbl.find ns.mailboxes (Process_id.get_id pid) in 
-      iter_stream (iter_fn matchers) mailbox >>= fun () ->
-      restore_mailbox ns pid ; 
+      iter_stream (iter_fn ns pid matchers) mailbox >>= fun () ->
       (Potpourri.get_option !result) (ns,pid) >>= fun (ns', pid', result') -> 
       return (ns', pid', Some result') in
 
@@ -710,7 +716,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                return (ns',pid',res)
             )
             (fun e ->
-               restore_mailbox ns pid ;
+               if not !mailbox_cleaned_up then restore_mailbox ns pid else ();
                log_msg ~pid:(Process_id.get_id pid) ns ~exn:e ~level:Error "receiving with no time out failed" 
                  (Format.sprintf "receiver process %s, encountred exception" (Process_id.string_of_pid pid)) >>= fun () ->
                fail e
@@ -726,7 +732,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                return (ns', pid', res)
             )
             (fun e ->
-               restore_mailbox ns pid ;
+               if not !mailbox_cleaned_up then restore_mailbox ns pid else ();
                match e with 
                | Timeout -> 
                  begin
@@ -1237,7 +1243,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             begin
               let new_pid = Process_id.make_local local_config.Local_config.node_name in
               Hashtbl.replace ns.mailboxes (Process_id.get_id new_pid) (I.create_stream ()) ; 
-              run_process' ns new_pid (Potpourri.get_option process)
+              run_process' ns new_pid ((Potpourri.get_option process) ())
             end 
         | Remote remote_config ->
           let ns = { mailboxes                = Hashtbl.create 1000 ; 
@@ -1272,7 +1278,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             begin
               let new_pid = Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name in
               Hashtbl.replace ns.mailboxes (Process_id.get_id new_pid) (I.create_stream ()) ; 
-              run_process' ns new_pid (Potpourri.get_option process)
+              run_process' ns new_pid ((Potpourri.get_option process) ())
             end             
       end                              
 end    

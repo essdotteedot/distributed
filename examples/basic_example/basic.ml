@@ -64,7 +64,7 @@ let producer_config = D.Remote { D.Remote_config.node_name = "producer" ;
                                  D.Remote_config.remote_nodes = [("127.0.0.1",47000,"consumer")] ;
                                }  
 
-let consumer_proc master_pid = D.(
+let consumer_proc master_pid () = D.(
     (* The 'receive' function takes a list of matchers to use to process the incoming messages.
        A matcher can be created by using the 'case' function. The 'case' function takes 2 functions :
        a matching criteria function and a function to process the message if the criteria is satisfied.
@@ -110,14 +110,14 @@ let consumer_proc master_pid = D.(
     ] 
   ) 
 
-let producer_proc = D.(
+let producer_proc () = D.(
     get_remote_nodes >>= fun nodes ->         (* get a list of currently connected remote nodes *)
     get_self_pid >>= fun pid_to_send_to ->    (* get the process id of the current process *)
     get_self_node >>= fun my_node ->          (* get our own node *) 
 
     (* Can lift operations from the underlying threading library, lwt is this case, into the process monad. *)
     (* spawn a process on the local node which will just print "hi.." then exit *)
-    spawn my_node (lift_io @@ Lwt_io.printl "hi from local process") >>= fun (_, _) -> 
+    spawn my_node (fun () -> lift_io @@ Lwt_io.printl "hi from local process") >>= fun (_, _) -> 
     (* spawn and monitor a process on the remote node atomically *)
     spawn ~monitor:true (List.hd nodes) (consumer_proc pid_to_send_to) >>= fun (remote_pid1, _) -> 
 

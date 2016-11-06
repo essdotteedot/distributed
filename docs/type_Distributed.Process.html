@@ -58,7 +58,7 @@
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;spawn&nbsp;:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;?monitor:bool&nbsp;<span class="keywordsign">-&gt;</span><br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Node_id</span>.t&nbsp;<span class="keywordsign">-&gt;</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;(unit&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t)&nbsp;<span class="keywordsign">-&gt;</span><br>
 &nbsp;&nbsp;&nbsp;&nbsp;(<span class="constructor">Distributed</span>.<span class="constructor">Process_id</span>.t&nbsp;*&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.monitor_ref&nbsp;option)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t<br>
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;case&nbsp;:<br>
@@ -99,7 +99,7 @@
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Node_id</span>.t&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t<br>
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;lift_io&nbsp;:&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.io&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t<br>
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;run_node&nbsp;:<br>
-&nbsp;&nbsp;&nbsp;&nbsp;?process:unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;?process:(unit&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t)&nbsp;<span class="keywordsign">-&gt;</span><br>
 &nbsp;&nbsp;&nbsp;&nbsp;?node_monitor_fn:(<span class="constructor">Distributed</span>.<span class="constructor">Node_id</span>.t&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t)&nbsp;<span class="keywordsign">-&gt;</span><br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.node_config&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.io<br>
 <span class="keyword">end</span></code></body></html>

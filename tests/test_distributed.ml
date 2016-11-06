@@ -10,7 +10,7 @@ let exit_fn : (unit -> unit Lwt.t) option ref = ref None
 
 (* let test_logger =
    Lwt_log.add_rule "*" Lwt_log.Debug ; 
-   Lwt_log.channel ~template:"$(date).$(milliseconds) : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout ()  *)
+   Lwt_log.channel ~template:"$(date).$(milliseconds) : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout ()  *)  
 
 let test_logger = Lwt_log.null    
 
@@ -166,7 +166,7 @@ let test_return_bind _ =
   let module P = Distributed.Make (Test_io) (M) in      
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let result = ref None in
-  let test_proc = P.(
+  let test_proc () = P.(
       return 5 >>= fun i ->
       result := Some i ;
       return ()       
@@ -182,10 +182,10 @@ let test_spawn_local_local_config _ =
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let result = ref false in
   let mres = ref None in
-  let test_proc = P.(                    
+  let test_proc () = P.(                    
       get_self_node >>= fun local_node ->
       assert_bool "process should not have spawned yet" (not !result) ;
-      spawn local_node (return () >>= fun _ -> return (result := true)) >>= fun (_, mon_res) ->
+      spawn local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (_, mon_res) ->
       mres := mon_res ;
       return ()        
     ) in             
@@ -207,10 +207,10 @@ let test_spawn_local_remote_config _ =
                              } in
   let result = ref false in
   let mres = ref None in
-  let test_proc = P.(        
+  let test_proc () = P.(        
       get_self_node >>= fun local_node ->
       assert_bool "process should not have spawned yet" (not !result) ;
-      spawn local_node (return () >>= fun _ -> result := true ; return ()) >>= fun (_, mon_res) ->
+      spawn local_node (fun () -> return () >>= fun _ -> result := true ; return ()) >>= fun (_, mon_res) ->
       mres := mon_res ;      
       return ()        
     ) in             
@@ -244,7 +244,7 @@ let test_spawn_remote_remote_config _ =
                                       } in
   let spawn_res = ref None in
   let mres = ref None in                                  
-  let consumer_proc = Consumer.(
+  let consumer_proc () = Consumer.(
       (* a bit of test hackery to get around the fact that the node will establish a connection on the loop back address
          but we need an entry in the established_connections table with the external node address so that the producer can
          connect to it
@@ -256,7 +256,7 @@ let test_spawn_remote_remote_config _ =
         Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
       )
     ) in    
-  let producer_proc = Producer.(
+  let producer_proc () = Producer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
@@ -266,7 +266,7 @@ let test_spawn_remote_remote_config _ =
       get_remote_nodes >>= fun nodes ->
       get_self_pid >>= fun pid_to_send_to ->
       assert_bool "process should not have spawned yet" (!spawn_res = None) ;
-      spawn (List.hd nodes) (Consumer.send pid_to_send_to "spawned") >>= fun (_, mon_res) ->      
+      spawn (List.hd nodes) (fun () -> Consumer.send pid_to_send_to "spawned") >>= fun (_, mon_res) ->      
       receive ~timeout_duration:0.05 [
         case (fun _ -> true) (fun v -> return v)
       ] >>= fun msg ->
@@ -292,10 +292,10 @@ let test_spawn_monitor_local_local_config _ =
   let result = ref false in
   let result_monitor = ref None in
   let mres = ref None in
-  let test_proc = P.(                          
+  let test_proc () = P.(                          
       get_self_node >>= fun local_node ->
       assert_bool "process should not have spawned yet" (not @@ !result || !result_monitor <> None) ;      
-      spawn ~monitor:true local_node (return () >>= fun _ -> return (result := true)) >>= fun (_, mon_res) ->
+      spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (_, mon_res) ->
       receive [
         termination_case 
           (function
@@ -327,10 +327,10 @@ let test_spawn_monitor_local_remote_config _ =
   let result = ref false in
   let result_monitor = ref None in
   let mres = ref None in
-  let test_proc = P.(                          
+  let test_proc () = P.(                          
       get_self_node >>= fun local_node ->
       assert_bool "Process should not have spawned yet" (not @@ !result || !result_monitor <> None) ;      
-      spawn ~monitor:true local_node (return () >>= fun _ -> return (result := true)) >>= fun (_, mon_res) ->
+      spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (_, mon_res) ->
       receive [
         termination_case 
           (function
@@ -372,7 +372,7 @@ let test_spawn_monitor_remote_remote_config _ =
                                       } in
   let result_monitor = ref None in
   let mres = ref None in                                  
-  let consumer_proc = Consumer.(
+  let consumer_proc () = Consumer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
@@ -380,7 +380,7 @@ let test_spawn_monitor_remote_remote_config _ =
         Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
       )
     ) in    
-  let producer_proc = Producer.(      
+  let producer_proc () = Producer.(      
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
@@ -389,7 +389,7 @@ let test_spawn_monitor_remote_remote_config _ =
       ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
       get_self_pid >>= fun pid_to_send_to ->
-      spawn ~monitor:true (List.hd nodes) (Consumer.send pid_to_send_to "spawned") >>= fun (_, mon_res) ->      
+      spawn ~monitor:true (List.hd nodes) (fun () -> Consumer.send pid_to_send_to "spawned") >>= fun (_, mon_res) ->      
       receive [
         termination_case 
           (function
@@ -420,10 +420,10 @@ let test_monitor_local_local_config _ =
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let result = ref false in
   let result_monitor = ref None in  
-  let test_proc = P.(                                        
+  let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_bool "Process should not have spawned yet" (not !result) ;
-      spawn local_node (return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
+      spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
       monitor new_pid >>= fun _ ->
       receive [
         termination_case 
@@ -452,10 +452,10 @@ let test_monitor_local_remote_config _ =
                              } in
   let result = ref false in
   let result_monitor = ref None in  
-  let test_proc = P.(                                        
+  let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_bool "Process should not have spawned yet" (not !result) ;
-      spawn local_node (return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
+      spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
       monitor new_pid >>= fun _ ->
       receive [
         termination_case 
@@ -494,7 +494,7 @@ let test_monitor_remote_remote_config _ =
                                         Consumer.Remote_config.node_ip = "5.6.7.8" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc = Consumer.(
+  let consumer_proc () = Consumer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
@@ -503,7 +503,7 @@ let test_monitor_remote_remote_config _ =
       )
     ) in    
   let result_monitor = ref None in    
-  let producer_proc = Producer.(        
+  let producer_proc () = Producer.(        
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
@@ -511,7 +511,7 @@ let test_monitor_remote_remote_config _ =
         Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
       ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
-      spawn (List.hd nodes) (return () >>= fun _ -> lift_io (Test_io.sleep 0.05)) >>= fun (remote_pid, _) ->
+      spawn (List.hd nodes) (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05)) >>= fun (remote_pid, _) ->
       monitor remote_pid >>= fun _ ->      
       receive [
         termination_case 
@@ -541,10 +541,10 @@ let test_unmonitor_local_local_config _ =
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let result = ref false in
   let unmon_res = ref None in
-  let test_proc = P.(                                        
+  let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_bool "process should not have spawned yet" (not !result) ;
-      spawn local_node (return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
+      spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
       monitor new_pid >>= fun mon_res ->
       unmonitor mon_res >>= fun () ->
       receive ~timeout_duration:0.05 [
@@ -575,10 +575,10 @@ let test_unmonitor_local_remote_config _ =
                              } in
   let result = ref false in
   let unmon_res = ref None in
-  let test_proc = P.(                                        
+  let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_bool "Process should not have spawned yet" (not !result) ;
-      spawn local_node (return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
+      spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
       monitor new_pid >>= fun mon_res ->
       unmonitor mon_res >>= fun () ->
       receive ~timeout_duration:0.05 [
@@ -619,7 +619,7 @@ let test_unmonitor_remote_remote_config _ =
                                         Consumer.Remote_config.node_ip = "5.6.7.8" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc = Consumer.(
+  let consumer_proc () = Consumer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
@@ -628,7 +628,7 @@ let test_unmonitor_remote_remote_config _ =
       )
     ) in    
   let unmon_res = ref None in
-  let producer_proc = Producer.(      
+  let producer_proc () = Producer.(      
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
@@ -636,7 +636,7 @@ let test_unmonitor_remote_remote_config _ =
         Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
       ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->      
-      spawn (List.hd nodes) (return () >>= fun _ -> lift_io (Test_io.sleep 0.05)) >>= fun (remote_pid, _) ->
+      spawn (List.hd nodes) (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05)) >>= fun (remote_pid, _) ->
       monitor remote_pid >>= fun mon_res ->      
       unmonitor mon_res >>= fun () ->
       receive ~timeout_duration:0.05 [
@@ -669,10 +669,10 @@ let test_unmonitor_from_spawn_monitor_local_local_config _ =
   let result = ref false in
   let mres = ref None in
   let unmon_res = ref None in
-  let test_proc = P.(                                        
+  let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_bool "Process should not have spawned yet" (not !result) ;
-      spawn ~monitor:true local_node (return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> result := true ; return ()) >>= fun (_, spawn_mon_res) ->
+      spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> result := true ; return ()) >>= fun (_, spawn_mon_res) ->
       mres := spawn_mon_res ;
       unmonitor (get_option spawn_mon_res) >>= fun () ->
       receive ~timeout_duration:0.05 [
@@ -704,10 +704,10 @@ let test_unmonitor_from_spawn_monitor_local_remote_config _ =
   let result = ref false in
   let mres = ref None in
   let unmon_res = ref None in  
-  let test_proc = P.(     
+  let test_proc () = P.(     
       get_self_node >>= fun local_node ->
       assert_bool "Process should not have spawned yet" (not !result) ;
-      spawn ~monitor:true local_node (return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> result := true ; return ()) >>= fun (_, spawn_mon_res) ->      
+      spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> result := true ; return ()) >>= fun (_, spawn_mon_res) ->      
       mres := spawn_mon_res ;
       unmonitor (get_option spawn_mon_res) >>= fun () ->
       receive ~timeout_duration:0.05 [
@@ -748,7 +748,7 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
                                         Consumer.Remote_config.node_ip = "5.6.7.8" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc = Consumer.(
+  let consumer_proc () = Consumer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
@@ -758,7 +758,7 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
     ) in   
   let mres = ref None in
   let unmon_res = ref None in 
-  let producer_proc = Producer.(
+  let producer_proc () = Producer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
@@ -766,7 +766,7 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
         Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
       ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->      
-      spawn ~monitor:true (List.hd nodes) (return () >>= fun _ -> lift_io (Test_io.sleep 0.05)) >>= fun (_, spawn_mon_res) ->
+      spawn ~monitor:true (List.hd nodes) (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05)) >>= fun (_, spawn_mon_res) ->
       mres := spawn_mon_res ;
       unmonitor (get_option spawn_mon_res) >>= fun () ->
       receive ~timeout_duration:0.05 [
@@ -797,7 +797,7 @@ let test_get_remote_nodes_local_only _ =
   let module P = Distributed.Make (Test_io) (M) in      
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let num_remote_nodes = ref (-1) in
-  let test_proc = P.(
+  let test_proc () = P.(
       get_remote_nodes >>= fun nodes ->
       return (num_remote_nodes := (List.length nodes))       
     ) in             
@@ -817,7 +817,7 @@ let test_get_remote_nodes_remote_local _ =
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let num_remote_nodes = ref (-1) in
-  let test_proc = P.(        
+  let test_proc () = P.(        
       get_remote_nodes >>= fun nodes ->
       return (num_remote_nodes := (List.length nodes))         
     ) in             
@@ -848,7 +848,7 @@ let test_get_remote_nodes_remote_conifg _ =
                                         Consumer.Remote_config.node_ip = "5.6.7.8" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc = Consumer.(
+  let consumer_proc () = Consumer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
@@ -857,7 +857,7 @@ let test_get_remote_nodes_remote_conifg _ =
       )
     ) in
   let num_remote_nodes = ref (-1) in    
-  let producer_proc = Producer.(
+  let producer_proc () = Producer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
@@ -886,14 +886,14 @@ let test_broadcast_local_only _ =
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let broadcast_received = ref 0 in      
   let loop_back_received = ref None in                         
-  let recv_proc = P.(        
+  let recv_proc () = P.(        
       receive [
         case ((=) "broadcast message") (fun _ -> return (broadcast_received := !broadcast_received +1)) ;
         case (fun _ -> true)           (fun _ -> return ())
       ] >>= fun _ ->
       return ()      
     ) in      
-  let test_proc = P.(
+  let test_proc () = P.(
       get_self_node >>= fun local_node ->
       spawn local_node recv_proc >>= fun _ ->
       spawn local_node recv_proc >>= fun _ ->
@@ -922,14 +922,14 @@ let test_broadcast_remote_local _ =
                              } in
   let broadcast_received = ref 0 in 
   let loop_back_received = ref None in                            
-  let recv_proc = P.(        
+  let recv_proc () = P.(        
       receive [
         case ((=) "broadcast message") (fun _ -> return (broadcast_received := !broadcast_received +1)) ;
         case (fun _ -> true)           (fun _ -> return ())
       ] >>= fun _ ->
       return ()      
     ) in      
-  let test_proc = P.(
+  let test_proc () = P.(
       get_self_node >>= fun local_node ->
       spawn local_node recv_proc >>= fun _ ->
       spawn local_node recv_proc >>= fun _ ->
@@ -968,7 +968,7 @@ let test_broadcast_remote_remote _ =
                                         Consumer.Remote_config.node_ip = "5.6.7.8" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc = Consumer.(
+  let consumer_proc () = Consumer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
@@ -978,14 +978,14 @@ let test_broadcast_remote_remote _ =
     ) in
   let broadcast_received = ref 0 in
   let loop_back_received = ref None in                             
-  let recv_proc to_send_pid = Consumer.(        
+  let recv_proc to_send_pid () = Consumer.(        
       receive [
         case ((=) "broadcast message") (fun _ -> send to_send_pid "incr") ;
         case (fun _ -> true)           (fun _ -> return ())
       ] >>= fun _ ->
       return ()      
     ) in      
-  let producer_proc = Producer.(
+  let producer_proc () = Producer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
@@ -1034,14 +1034,14 @@ let test_send_local_only _ =
   let received_message = ref None in
   let mres = ref None in       
   let send_failed = ref false in                  
-  let recv_proc = P.(        
+  let recv_proc () = P.(        
       receive [
         case ((=) "sent message") (fun _ -> return (received_message := Some "sent message")) ;
         case (fun _ -> true)      (fun _ -> return ())
       ] >>= fun _ ->
       return ()      
     ) in      
-  let test_proc = P.(      
+  let test_proc () = P.(      
       get_self_node >>= fun local_node ->
       spawn ~monitor:true local_node recv_proc >>= fun (spawned_pid,mref) ->
       mres := mref ;
@@ -1080,14 +1080,14 @@ let test_send_remote_local _ =
   let received_message = ref None in
   let mres = ref None in       
   let send_failed = ref false in                  
-  let recv_proc = P.(        
+  let recv_proc () = P.(        
       receive [
         case ((=) "sent message") (fun _ -> return (received_message := Some "sent message")) ;
         case (fun _ -> true)      (fun _ -> return ())
       ] >>= fun _ ->
       return ()      
     ) in      
-  let test_proc = P.(      
+  let test_proc () = P.(      
       get_self_node >>= fun local_node ->
       spawn ~monitor:true local_node recv_proc >>= fun (spawned_pid,mref) ->
       mres := mref ;
@@ -1135,7 +1135,7 @@ let test_send_remote_remote _ =
                                         Consumer.Remote_config.node_ip = "5.6.7.8" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc = Consumer.(
+  let consumer_proc () = Consumer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
@@ -1145,14 +1145,14 @@ let test_send_remote_remote _ =
     ) in
   let sent_received = ref 0 in
   let send_failed = ref false in                               
-  let recv_proc to_send_pid = Consumer.(        
+  let recv_proc to_send_pid () = Consumer.(        
       receive [
         case ((=) "sent message") (fun _ -> send to_send_pid "incr") ;
         case (fun _ -> true)      (fun _ -> return ())
       ] >>= fun _ ->
       return ()      
     ) in      
-  let producer_proc = Producer.(
+  let producer_proc () = Producer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
@@ -1210,7 +1210,7 @@ let test_empty_matchers_local_only _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in  
   let expected_exception_happened = ref false in        
-  let test_proc = P.(      
+  let test_proc () = P.(      
       catch 
         (fun () -> receive []) 
         (function
@@ -1235,7 +1235,7 @@ let test_empty_matchers_remote_local _ =
                                P.Remote_config.remote_nodes = [] ;
                              } in 
   let expected_exception_happened = ref false in        
-  let test_proc = P.(      
+  let test_proc () = P.(      
       catch 
         (fun () -> receive []) 
         (function
@@ -1271,7 +1271,7 @@ let test_empty_matchers_remote_remote _ =
                                         Consumer.Remote_config.node_ip = "5.6.7.8" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc = Consumer.(
+  let consumer_proc () = Consumer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
@@ -1280,7 +1280,7 @@ let test_empty_matchers_remote_remote _ =
       )
     ) in
   let expected_exception_happened = ref false in    
-  let producer_proc = Producer.(
+  let producer_proc () = Producer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
@@ -1313,9 +1313,9 @@ let test_raise_local_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let expected_exception_happened = ref false in  
-  let test_proc = P.(                      
+  let test_proc () = P.(                      
       get_self_node >>= fun local_node ->
-      spawn ~monitor:true local_node (return () >>= fun _ -> fail Test_ex) >>= fun (_, _) ->
+      spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> fail Test_ex) >>= fun (_, _) ->
       receive [
         termination_case 
           (function
@@ -1342,9 +1342,9 @@ let test_raise_local_remote_config _ =
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let expected_exception_happened = ref false in  
-  let test_proc = P.(                      
+  let test_proc () = P.(                      
       get_self_node >>= fun local_node ->
-      spawn ~monitor:true local_node (return () >>= fun _ -> fail Test_ex) >>= fun (_, _) ->
+      spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> fail Test_ex) >>= fun (_, _) ->
       receive [
         termination_case 
           (function
@@ -1386,7 +1386,7 @@ let test_raise_remote_remote_config _ =
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
   let expected_exception_happened = ref false in                                 
-  let consumer_proc = Consumer.(
+  let consumer_proc () = Consumer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
@@ -1394,7 +1394,7 @@ let test_raise_remote_remote_config _ =
         Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
       )
     ) in    
-  let producer_proc = Producer.(
+  let producer_proc () = Producer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
@@ -1403,7 +1403,7 @@ let test_raise_remote_remote_config _ =
       ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
       get_self_pid >>= fun _ ->
-      spawn ~monitor:true (List.hd nodes) (Consumer.(return () >>= fun () -> fail Test_ex)) >>= fun (_, _) ->      
+      spawn ~monitor:true (List.hd nodes) (Consumer.(fun () -> return () >>= fun () -> fail Test_ex)) >>= fun (_, _) ->      
       receive [
         termination_case 
           (function
@@ -1437,10 +1437,10 @@ let test_monitor_dead_process_local_local_config _ =
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let result = ref false in
   let result_monitor = ref None in  
-  let test_proc = P.(                                        
+  let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_bool "Process should not have spawned yet" (not !result) ;
-      spawn local_node (return () >>= fun _ -> return (result := true)) >>= fun (new_pid, _) ->
+      spawn local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (new_pid, _) ->
       lift_io (Test_io.sleep 0.05) >>= fun () ->
       monitor new_pid >>= fun _ ->
       receive [
@@ -1470,10 +1470,10 @@ let test_monitor_dead_process_local_remote_config _ =
                              } in
   let result = ref false in
   let result_monitor = ref None in  
-  let test_proc = P.(                                        
+  let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_bool "Process should not have spawned yet" (not !result) ;
-      spawn local_node (return () >>= fun _ -> return (result := true)) >>= fun (new_pid, _) ->
+      spawn local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (new_pid, _) ->
       lift_io (Test_io.sleep 0.05) >>= fun () ->
       monitor new_pid >>= fun _ ->
       receive [
@@ -1513,7 +1513,7 @@ let test_monitor_dead_process_remote_remote_config _ =
                                         Consumer.Remote_config.node_ip = "5.6.7.8" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc = Consumer.(
+  let consumer_proc () = Consumer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
@@ -1522,7 +1522,7 @@ let test_monitor_dead_process_remote_remote_config _ =
       )
     ) in    
   let result_monitor = ref None in    
-  let producer_proc = Producer.(
+  let producer_proc () = Producer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
@@ -1530,7 +1530,7 @@ let test_monitor_dead_process_remote_remote_config _ =
         Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
       ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
-      spawn (List.hd nodes) (return () >>= fun () -> return ()) >>= fun (remote_pid, _) ->
+      spawn (List.hd nodes) (fun () -> return () >>= fun () -> return ()) >>= fun (remote_pid, _) ->
       lift_io (Test_io.sleep 0.05) >>= fun () ->
       monitor remote_pid >>= fun _ ->      
       receive [
@@ -1561,7 +1561,7 @@ let test_add_remove_remote_nodes_in_local_config _ =
   let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
   let add_pass = ref false in
   let remove_pass = ref false in
-  let test_proc = P.(                                        
+  let test_proc () = P.(                                        
       catch
         (fun () -> 
            add_remote_node "9.9.9.9" 7777 "foobar" >>= fun _ ->
@@ -1613,7 +1613,7 @@ let test_add_remove_nodes_remote_config _ =
                                         Consumer.Remote_config.node_ip = "5.6.7.8" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc = Consumer.(
+  let consumer_proc () = Consumer.(
       return () >>= fun _ ->
       let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
       Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
@@ -1627,7 +1627,7 @@ let test_add_remove_nodes_remote_config _ =
   let expected_monitor_exception = ref false in
   let expected_broadcast_exception = ref false in   
   let expected_send_exception = ref false in
-  let producer_proc = Producer.(
+  let producer_proc () = Producer.(
       return () >>= fun _ ->
       return (
         let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
@@ -1639,7 +1639,7 @@ let test_add_remove_nodes_remote_config _ =
       add_remote_node "5.6.7.8" 101 "consumer" >>= fun consumer_node ->
       get_remote_nodes >>= fun nodes_after_add ->
       remote_nodes_after_add := nodes_after_add ;
-      spawn consumer_node (lift_io @@ Test_io.sleep 0.1) >>= fun (rpid,_) ->
+      spawn consumer_node (fun () -> lift_io @@ Test_io.sleep 0.1) >>= fun (rpid,_) ->
       remove_remote_node consumer_node >>= fun () ->
       get_remote_nodes >>= fun nodes_after_remove ->
       remote_nodes_after_remove := nodes_after_remove ;
@@ -1650,7 +1650,7 @@ let test_add_remove_nodes_remote_config _ =
           | _ -> assert false      
         ) >>= fun () ->
       catch
-        (fun () -> spawn consumer_node (return () >>= fun () -> return ()) >>= fun _ -> return ())
+        (fun () -> spawn consumer_node (fun () -> return () >>= fun () -> return ()) >>= fun _ -> return ())
         (function
           | InvalidNode n -> if Distributed.Node_id.get_name n = "consumer" then return (expected_spawn_exception := true) else return ()
           | _ -> assert false      
@@ -1718,8 +1718,8 @@ let suite = "Test Distributed" >::: [
     "Test get remote nodes remote with remote conifg"                     >:: test_get_remote_nodes_remote_conifg ; 
 
     "Test broadcast local with local config"                              >:: test_broadcast_local_only ;
-    "Test broadcast local with remote config"                             >:: test_broadcast_remote_local ;
-    "Test broadcast remote and local with remote config"                  >:: test_broadcast_remote_remote ;   
+    "Test broadcast local with remote config"                             >:: test_broadcast_remote_local ; 
+    "Test broadcast remote and local with remote config"                  >:: test_broadcast_remote_remote ;    
 
     "Test send local with local config"                                   >:: test_send_local_only ;  
     "Test send local with remote config"                                  >:: test_send_remote_local ; 

@@ -37,7 +37,7 @@ let option_get = function
   | Some v -> v
   | _ -> assert false
 
-let wait_for_register_proc pid_to_send_to name_to_wait_for = D.(
+let wait_for_register_proc pid_to_send_to name_to_wait_for () = D.(
     let pid = ref None in
     receive_loop [
       case (function Message.Register _ -> true | _ -> false)
@@ -93,12 +93,12 @@ let registra () = D.(
 
 let main_proc () = D.(
     get_self_node >>= fun self_node ->
-    spawn ~monitor:true self_node (registra ()) >>= fun _ ->
+    spawn ~monitor:true self_node registra >>= fun _ ->
     receive_loop [
       termination_case 
         (function
           | _ -> 
-            spawn ~monitor:true self_node (registra ()) >>= fun _ ->
+            spawn ~monitor:true self_node registra >>= fun _ ->
             return true
         ) ;
       case (fun _ -> true)
@@ -107,4 +107,4 @@ let main_proc () = D.(
   )
 
 let () = 
-  Lwt_main.run (D.run_node ~process:(main_proc ()) config)
+  Lwt_main.run (D.run_node ~process:main_proc config)

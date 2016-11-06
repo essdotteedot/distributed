@@ -42,7 +42,7 @@ let config = D.Remote { D.Remote_config.node_name = "add_client" ;
                         D.Remote_config.remote_nodes = [] ; (* we will add nodes dynamically*)
                       } 
 
-let rec add_forever add_pid = D.(
+let rec add_forever add_pid () = D.(
     get_self_pid >>= fun self_pid ->
     let x = Random.int 100 in
     let y = Random.int 100 in
@@ -59,10 +59,10 @@ let rec add_forever add_pid = D.(
       lift_io (Lwt_io.printlf "Failed to result in time for add request of %d + %d." x y)
     | _ -> 
       lift_io (Lwt_unix.sleep 0.5) >>= fun () ->
-      add_forever add_pid
+      add_forever add_pid ()
   )
 
-let rec find_remote_process add_node = D.(
+let rec find_remote_process add_node () = D.(
     get_self_pid >>= fun self_pid ->
     broadcast add_node (Message.Whois ("add_process", self_pid)) >>= fun () ->    
     receive ~timeout_duration:0.5 [
@@ -92,7 +92,7 @@ let rec find_remote_process add_node = D.(
         case (fun _ -> true)
           (fun _ -> return true)
       ] >>= fun _ ->      
-      find_remote_process add_node
+      find_remote_process add_node ()
   )   
 
 let rec main_proc () = D.(
@@ -123,5 +123,5 @@ let rec main_proc () = D.(
   )  
 
 let () =
-  Lwt_main.run (D.run_node ~process:(D.(main_proc () >>= fun _ -> return ())) config)
+  Lwt_main.run (D.run_node ~process:(D.(fun () -> main_proc () >>= fun _ -> return ())) config)
 
