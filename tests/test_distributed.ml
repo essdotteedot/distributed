@@ -10,7 +10,7 @@ let exit_fn : (unit -> unit Lwt.t) option ref = ref None
 
 (* let test_logger =
    Lwt_log.add_rule "*" Lwt_log.Debug ; 
-   Lwt_log.channel ~template:"$(date).$(milliseconds) : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout ()  *)  
+   Lwt_log.channel ~template:"$(date).$(milliseconds) : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout ()  *)   
 
 let test_logger = Lwt_log.null    
 
@@ -31,8 +31,8 @@ let pp_list ?first ?last ?sep (items : 'a list) (string_of_item : 'a -> string) 
   if last <> None then Buffer.add_string buff (get_option last) else () ;
   Buffer.contents buff
 
- let hashtbl_keys (table : ('a,'b) Hashtbl.t) : 'a list =
-     Hashtbl.fold (fun k _ acc -> k::acc) table []    
+let hashtbl_keys (table : ('a,'b) Hashtbl.t) : 'a list =
+  Hashtbl.fold (fun k _ acc -> k::acc) table []    
 
 module Test_io = struct    
 
@@ -1684,7 +1684,157 @@ let test_add_remove_nodes_remote_config _ =
       Hashtbl.iter (fun _ (pipes,_) -> close_pipes pipes) established_connections ;
       return @@ Hashtbl.clear established_connections 
     ) 
-  )                         
+  )         
+
+(* test selective receive, test that matching against a message will leve the others in the correct order. *)
+
+let test_selective_receive_local_config _ =
+  let module P = Distributed.Make (Test_io) (M) in
+  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let selective_message = ref None in
+  let other_messages_inorder = ref [] in  
+  let receiver_proc () = P.(                      
+      lift_io (Test_io.sleep 0.1) >>= fun () ->
+      receive [
+        case ((=) "the one")
+          (fun v -> return (selective_message := Some v))
+      ] >>= fun _ ->
+      receive_loop ~timeout_duration:0.1 [
+        case (fun _ -> true)
+          (fun v -> other_messages_inorder := (v::(!other_messages_inorder)) ; return true)
+      ]         
+    ) in             
+  let sender_proc receiver_pid () = P.(
+      receiver_pid >! "5" >>= fun () ->
+      receiver_pid >! "4" >>= fun () ->
+      receiver_pid >! "3" >>= fun () ->
+      receiver_pid >! "the one" >>= fun () ->
+      receiver_pid >! "2" >>= fun () ->
+      receiver_pid >! "1" >>= fun () ->
+      receiver_pid >! "0"    
+    ) in
+  let main_proc () = P.(
+      get_self_node >>= fun self_node ->
+      spawn self_node receiver_proc >>= fun (rpid,_) ->
+      spawn self_node (sender_proc rpid) >>= fun _ ->
+      lift_io (Test_io.sleep 0.2) >>= fun () ->
+      return () 
+    ) in
+  Lwt.(Lwt_main.run (P.run_node node_config ~process:main_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  assert_equal ~msg:"selective receive failed" (Some "the one") !selective_message ;
+  assert_equal ~msg:"selective receive failed" ["0" ; "1" ; "2" ; "3" ; "4" ; "5"] !other_messages_inorder ;
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections) ;
+  assert_equal 0 (Hashtbl.length established_connections)        
+
+let test_selective_receive_local_remote_config _ =
+  let module P = Distributed.Make (Test_io) (M) in
+  let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
+                               P.Remote_config.logger = test_logger ;
+                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.heart_beat_frequency = 2.0 ;
+                               P.Remote_config.heart_beat_timeout = 5.0 ;
+                               P.Remote_config.connection_backlog = 10 ;
+                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.remote_nodes = [] ;
+                             } in
+  let selective_message = ref None in
+  let other_messages_inorder = ref [] in  
+  let receiver_proc () = P.(                      
+      lift_io (Test_io.sleep 0.1) >>= fun () ->
+      receive [
+        case ((=) "the one")
+          (fun v -> return (selective_message := Some v))
+      ] >>= fun _ ->
+      receive_loop ~timeout_duration:0.1 [
+        case (fun _ -> true)
+          (fun v -> other_messages_inorder := (v::(!other_messages_inorder)) ; return true)
+      ]         
+    ) in             
+  let sender_proc receiver_pid () = P.(
+      receiver_pid >! "5" >>= fun () ->
+      receiver_pid >! "4" >>= fun () ->
+      receiver_pid >! "3" >>= fun () ->
+      receiver_pid >! "the one" >>= fun () ->
+      receiver_pid >! "2" >>= fun () ->
+      receiver_pid >! "1" >>= fun () ->
+      receiver_pid >! "0"    
+    ) in
+  let main_proc () = P.(
+      get_self_node >>= fun self_node ->
+      spawn self_node receiver_proc >>= fun (rpid,_) ->
+      spawn self_node (sender_proc rpid) >>= fun _ ->
+      lift_io (Test_io.sleep 0.2) >>= fun () ->
+      return () 
+    ) in
+  Lwt.(Lwt_main.run (P.run_node node_config ~process:main_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  assert_equal ~msg:"selective receive failed" (Some "the one") !selective_message ;
+  assert_equal ~msg:"selective receive failed" ["0" ; "1" ; "2" ; "3" ; "4" ; "5"] !other_messages_inorder ;
+  assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
+  Hashtbl.iter (fun _ (pipes,_) -> close_pipes pipes) established_connections ;
+  Hashtbl.clear established_connections                      
+
+let test_selective_receive_remote_remote_config _ =
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
+  let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
+                                      Producer.Remote_config.logger = test_logger ;
+                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
+                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.connection_backlog = 10 ;
+                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
+                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                    } in
+  let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
+                                        Consumer.Remote_config.logger = test_logger ;
+                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
+                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.connection_backlog = 10 ;
+                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.remote_nodes = [] ;
+                                      } in
+  let selective_message = ref None in
+  let other_messages_inorder = ref [] in  
+  let receiver_proc () = Consumer.(                      
+      lift_io (Test_io.sleep 0.1) >>= fun () ->
+      receive [
+        case ((=) "the one")
+          (fun v -> return (selective_message := Some v))
+      ] >>= fun _ ->
+      receive_loop ~timeout_duration:0.1 [
+        case (fun _ -> true)
+          (fun v -> other_messages_inorder := (v::(!other_messages_inorder)) ; return true)
+      ]         
+    ) in             
+  let sender_proc receiver_pid () = Producer.(
+      receiver_pid >! "5" >>= fun () ->
+      receiver_pid >! "4" >>= fun () ->
+      receiver_pid >! "3" >>= fun () ->
+      receiver_pid >! "the one" >>= fun () ->
+      receiver_pid >! "2" >>= fun () ->
+      receiver_pid >! "1" >>= fun () ->
+      receiver_pid >! "0"    
+    ) in
+  let main_proc () = Producer.(
+      get_self_node >>= fun self_node ->
+      spawn self_node receiver_proc >>= fun (rpid,_) ->
+      spawn self_node (sender_proc rpid) >>= fun _ ->
+      lift_io (Test_io.sleep 0.2) >>= fun () ->
+      return () 
+    ) in
+  Lwt.async (fun () -> Consumer.run_node remote_config ~process:receiver_proc) ;
+  Lwt.(
+    Lwt_main.run (
+      Producer.run_node node_config ~process:main_proc >>= fun () ->
+      assert_equal ~msg:"selective receive failed" (Some "the one") !selective_message ;
+      assert_equal ~msg:"selective receive failed" ["0" ; "1" ; "2" ; "3" ; "4" ; "5"] !other_messages_inorder ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      (get_option !exit_fn) () >>= fun () ->
+      Hashtbl.iter (fun _ (pipes,_) -> close_pipes pipes) established_connections ;
+      return @@ Hashtbl.clear established_connections 
+    ) 
+  )               
 
 let suite = "Test Distributed" >::: [
     "Test return and bind"                                                >:: test_return_bind ;
@@ -1734,7 +1884,11 @@ let suite = "Test Distributed" >::: [
     "Test raise exception on monitored process remote with remote config" >:: test_raise_remote_remote_config ;
 
     "Test add/remove remote node in local only config"                    >:: test_add_remove_remote_nodes_in_local_config ;
-    "Test add/remove remote nodes with remote config"                     >:: test_add_remove_nodes_remote_config  
+    "Test add/remove remote nodes with remote config"                     >:: test_add_remove_nodes_remote_config ; 
+
+    "Test selective receive with local only config"                       >:: test_selective_receive_local_config ;
+    "Test selective_receive local with remoteconfig"                      >:: test_selective_receive_local_remote_config ;
+    "Test selective receive remote with remote config"                    >:: test_selective_receive_remote_remote_config  
   ]
 
 let _ = 
