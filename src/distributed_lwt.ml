@@ -23,7 +23,7 @@ module IO_LWT = struct
 
   let lib_name = "Distributed_lwt"
 
-  let lib_version = "0.3.0"
+  let lib_version = "0.4.0"
 
   let lib_description = "A Lwt based implementation."           
 
