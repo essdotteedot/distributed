@@ -3,12 +3,12 @@
     {!modtype:Process} provides a monadic interface to describe distributed computations.
 
     @author essdotteedot [<essdotteedot[at]gmail[dot]com>]
-    @version 0.3.0
+    @version 0.4.0
 *)
 
 (** Some nomenclature :
     - Node : A node corresponds to a operating system process. There can be many nodes on a
-             a single machine. 
+             single machine. 
 
     - Process : A process corresponds to a light weight thread (i.e., user space cooperative threads).
                 There can be many processes on a single Node.                                      
