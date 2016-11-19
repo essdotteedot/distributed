@@ -62,8 +62,8 @@
 &nbsp;&nbsp;&nbsp;&nbsp;(<span class="constructor">Distributed</span>.<span class="constructor">Process_id</span>.t&nbsp;*&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.monitor_ref&nbsp;option)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t<br>
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;case&nbsp;:<br>
-&nbsp;&nbsp;&nbsp;&nbsp;(<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.message_type&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;bool)&nbsp;<span class="keywordsign">-&gt;</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;(<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.message_type&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t)&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;(<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.message_type&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(unit&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t)&nbsp;option)&nbsp;<span class="keywordsign">-&gt;</span><br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.matcher<br>
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;termination_case&nbsp;:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;(<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.monitor_reason&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.t)&nbsp;<span class="keywordsign">-&gt;</span><br>

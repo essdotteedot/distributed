@@ -205,9 +205,10 @@ The configuration of a node. Can be one of <a href="Distributed.Process.html#TYP
       If <code class="code">node_id</code> is an unknown node then <a href="Distributed.Process.html#EXCEPTIONInvalidNode"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">InvalidNode</span></code></a> exception is raised.<br>
 </div>
 
-<pre><span id="VALcase"><span class="keyword">val</span> case</span> : <code class="type">(<a href="Distributed.Process.html#TYPEmessage_type">message_type</a> -> bool) -><br>       (<a href="Distributed.Process.html#TYPEmessage_type">message_type</a> -> 'a <a href="Distributed.Process.html#TYPEt">t</a>) -><br>       'a <a href="Distributed.Process.html#TYPEmatcher">matcher</a></code></pre><div class="info ">
-<code class="code">case match_fn handler</code> will create a <a href="Distributed.Process.html#TYPEmatcher"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.matcher</code></a> which will use <code class="code">match_fn</code> to match on potential messages and <code class="code">handler</code>
-      to process the matched message .<br>
+<pre><span id="VALcase"><span class="keyword">val</span> case</span> : <code class="type">(<a href="Distributed.Process.html#TYPEmessage_type">message_type</a> -><br>        (unit -> 'a <a href="Distributed.Process.html#TYPEt">t</a>) option) -><br>       'a <a href="Distributed.Process.html#TYPEmatcher">matcher</a></code></pre><div class="info ">
+<code class="code">case match_fn</code> will create a <a href="Distributed.Process.html#TYPEmatcher"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.matcher</code></a> which will use <code class="code">match_fn</code> to match on potential messages.
+      <code class="code">match_fn</code> should return <code class="code"><span class="constructor">None</span></code> to indicate no match or <code class="code"><span class="constructor">Some</span> handler</code> where <code class="code">handler</code> is the function
+      that should be called to handle the matching message.<br>
 </div>
 
 <pre><span id="VALtermination_case"><span class="keyword">val</span> termination_case</span> : <code class="type">(<a href="Distributed.Process.html#TYPEmonitor_reason">monitor_reason</a> -> 'a <a href="Distributed.Process.html#TYPEt">t</a>) -><br>       'a <a href="Distributed.Process.html#TYPEmatcher">matcher</a></code></pre><div class="info ">
