@@ -18,27 +18,27 @@ let counter = ref 0
 
 let pong () = D.(
     receive_loop [
-      case (function Ping_message.Ping _ -> true | _ -> false) 
+      case  
         (function
-          | Ping_message.Ping s -> 
-            lift_io (Lwt_io.printl @@ Format.sprintf "Got message Ping %s" s) >>= fun () ->
-            get_remote_node "ping_node" >>= 
-            begin 
-              function
-              | None -> 
-                lift_io (Lwt_io.printl "Remote node ping is not up, exiting") >>= fun () -> 
-                return false
-              | Some rnode ->
-                broadcast rnode (Ping_message.Pong (string_of_int !counter)) >>= fun () ->
-                counter := !counter + 1 ;
-                return true
-            end
-          | _ -> assert false
+          | Ping_message.Ping s -> Some (fun () -> 
+              lift_io (Lwt_io.printl @@ Format.sprintf "Got message Ping %s" s) >>= fun () ->
+              get_remote_node "ping_node" >>= 
+              begin 
+                function
+                | None -> 
+                  lift_io (Lwt_io.printl "Remote node ping is not up, exiting") >>= fun () -> 
+                  return false
+                | Some rnode ->
+                  broadcast rnode (Ping_message.Pong (string_of_int !counter)) >>= fun () ->
+                  counter := !counter + 1 ;
+                  return true
+              end)
+          | _ -> None
         ) ;
-      case (fun _ -> true) 
-        (fun v -> 
-           lift_io (Lwt_io.printl @@ Format.sprintf "Got unexpected message %s" (Ping_message.string_of_message v)) >>= fun () ->
-           assert false
+      case  
+        (fun v -> Some (fun () -> 
+             lift_io (Lwt_io.printl @@ Format.sprintf "Got unexpected message %s" (Ping_message.string_of_message v)) >>= fun () ->
+             assert false)
         ) 
     ] 
   )

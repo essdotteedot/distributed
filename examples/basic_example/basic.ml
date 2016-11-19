@@ -72,40 +72,45 @@ let consumer_proc master_pid () = D.(
        The other matcher creation function is 'termination_case' which is used in the producer below. 
     *)
     receive_loop [
-      case ((=) M.Ping) 
-        (fun v -> 
-           send master_pid M.Pong >>= fun () -> 
-           lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message v >>= fun () ->
-           return true
-        ) ;
-      case (function M.Incr _ -> true | _ -> false) 
+      case  
         (function 
-          | M.Incr incr_fn -> 
-            send master_pid (M.Incr_res (incr_fn 1)) >>= fun () -> 
-            lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message (M.Incr incr_fn) >>= fun () ->
-            return true
-          | _ -> assert false 
+          | M.Ping as v -> Some (fun () -> 
+              send master_pid M.Pong >>= fun () -> 
+              lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message v >>= fun () ->
+              return true)
+          | _ -> None
+        ) ;
+      case  
+        (function 
+          | M.Incr incr_fn -> Some (fun () ->
+              send master_pid (M.Incr_res (incr_fn 1)) >>= fun () -> 
+              lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message (M.Incr incr_fn) >>= fun () ->
+              return true)
+          | _ -> None 
         ) ;  
-      case ((=) M.Raise)
-        (fun v ->
-           lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message v >>= fun () ->
-           fail M.Ping_ex
-        ) ;
-      case (fun x -> match x with M.Var _ -> true | _ -> false) 
+      case 
         (function 
-          | M.Var `End -> 
-            lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message (M.Var `End) >>= fun () ->
-            return false
-          | M.Var `Noop -> 
-            lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message (M.Var `Noop) >>= fun () ->
-            return true
-          | _ -> assert false 
+          | M.Raise as v -> Some (fun () ->
+              lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message v >>= fun () ->
+              fail M.Ping_ex)
+          | _ -> None
+        ) ;
+      case 
+        (function 
+          | M.Var `End -> Some (fun () -> 
+              lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message (M.Var `End) >>= fun () ->
+              return false)
+          | M.Var `Noop -> Some (fun () -> 
+              lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message (M.Var `Noop) >>= fun () ->
+              return true)
+          | _ -> None 
         ) ;    
       (*a catch all case, this is good to have otherwise the non-matching messages are just left in the order they came in the processes' mailbox *)
-      case (fun _ -> true) 
-        (fun v -> 
-           lift_io @@ Lwt_io.printlf "got unexpected message %s from remote node" @@ M.string_of_message v >>= fun () ->
-           return true                 
+      case  
+        (fun v -> Some (fun () -> 
+             lift_io @@ Lwt_io.printlf "got unexpected message %s from remote node" @@ M.string_of_message v >>= fun () ->
+             return true 
+           )                
         )
     ] 
   ) 
@@ -140,17 +145,19 @@ let producer_proc () = D.(
 
     (* process messages that are sent to us *)
     receive_loop [
-      case ((=) M.Pong) 
-        (fun v -> 
-           lift_io @@ Lwt_io.printlf "got message %s from remote node" (M.string_of_message v) >>= fun () ->
-           return true                    
-        ) ;
-      case (function M.Incr_res _ -> true | _ -> false) 
+      case  
         (function 
-          | M.Incr_res r -> 
-            lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message (M.Incr_res r) >>= fun () ->
-            return true
-          | _ -> assert false 
+          | M.Pong as v -> Some (fun () -> 
+              lift_io @@ Lwt_io.printlf "got message %s from remote node" (M.string_of_message v) >>= fun () ->
+              return true)
+          | _ -> None                   
+        ) ;
+      case  
+        (function 
+          | M.Incr_res r -> Some (fun () -> 
+              lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message (M.Incr_res r) >>= fun () ->
+              return true)
+          | _ -> None 
         ) ;  
       (* use the termination_case matcher to match against messages about the termination, either normal or exception, or previously monitored processes *)
       termination_case 
@@ -170,10 +177,10 @@ let producer_proc () = D.(
             else assert false
           | _ -> assert false 
         )  ;
-      case (fun _ -> true) 
-        (fun v -> 
-           lift_io @@ Lwt_io.printlf "got unexpected message %s from remote node" (M.string_of_message v) >>= fun () ->
-           return true
+      case  
+        (fun v -> Some (fun () -> 
+             lift_io @@ Lwt_io.printlf "got unexpected message %s from remote node" (M.string_of_message v) >>= fun () ->
+             return true)
         ) 
     ] 
   )                                                                  

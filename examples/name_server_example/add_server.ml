@@ -35,26 +35,31 @@ let process_add_request name_server_node () = D.(
     lift_io (Lwt_io.printl "Add process is registering itself with the name server.") >>= fun () ->
     broadcast name_server_node (Message.Register ("add_process", self_pid)) >>= fun () ->
     receive ~timeout_duration:0.5 [
-      case (function Message.Register_ok -> true | _ -> false)
-        (fun _ -> return ())        
+      case (
+        function 
+        | Message.Register_ok -> Some (fun () ->
+            lift_io (Lwt_io.printl "Add process successfully registered with the name server.") >>= fun () -> 
+            return ()) 
+        | _ -> None
+      )                
     ] >>= function
     | None ->
       lift_io (Lwt_io.printl "Add process failed to get ok response for registration request.") >>= fun () ->
       fail Failed_to_register
     | _ ->
       receive_loop [
-        case (function Message.Add _ -> true | _ -> false)
+        case 
           (function
-            | Message.Add (x, y, requester_pid) ->
-              requester_pid >! (Message.Add_result (x+y)) >>= fun () ->
-              lift_io (Lwt_io.printlf "Successfully added %d and %d and sent back result." x y) >>= fun () ->
-              return true
-            | _ -> assert false
+            | Message.Add (x, y, requester_pid) -> Some (fun () ->
+                requester_pid >! (Message.Add_result (x+y)) >>= fun () ->
+                lift_io (Lwt_io.printlf "Successfully added %d and %d and sent back result." x y) >>= fun () ->
+                return true)
+            | _ -> None
           ) ;    
-        case (fun _ -> true)
-          (fun m ->
-             lift_io (Lwt_io.printlf "Add process ignoring message %s." (Message.string_of_message m)) >>= fun () -> 
-             return true
+        case 
+          (fun m -> Some (fun () -> 
+               lift_io (Lwt_io.printlf "Add process ignoring message %s." (Message.string_of_message m)) >>= fun () -> 
+               return true)
           )
       ]
   )   
@@ -77,8 +82,8 @@ let rec main_proc () = D.(
             lift_io (Lwt_io.printlf"Add process died, respawning it.") >>= fun () ->
             return false
         ) ;
-      case (fun _ -> true)
-        (fun _ -> return true)
+      case 
+        (fun _ -> Some (fun () -> return true))
     ] >>= fun _ ->
     main_proc ()
   )  

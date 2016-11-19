@@ -224,7 +224,7 @@ module type Process = sig
 
   val spawn : ?monitor:bool -> Node_id.t -> (unit -> unit t) -> (Process_id.t * monitor_ref option) t 
 
-  val case : (message_type -> bool) -> (message_type -> 'a t) -> 'a matcher
+  val case : (message_type -> (unit -> 'a t) option) -> 'a matcher
 
   val termination_case : (monitor_reason -> 'a t) -> 'a matcher
 
@@ -339,11 +339,11 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
   and 'a t = (node_state * Process_id.t) -> (node_state * Process_id.t * 'a) io                    
 
-  type 'a matcher = (message -> bool) * (message -> 'a t)                 
+  type 'a matcher = (message -> (unit -> 'a t) option)                 
 
   let initalised = ref false    
 
-  let dist_lib_version = "0.3.0"       
+  let dist_lib_version = "0.4.0"       
 
   let string_of_termination_reason (reason : monitor_reason) : string =
     match reason with
@@ -642,23 +642,17 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             fail @@ InvalidNode node_id              
           end 
 
-  let case (match_fn:(message_type -> bool)) (match_handler:(message_type -> 'a t)) : 'a matcher =
+  let case (match_fn:(message_type -> (unit -> 'a t) option)) : 'a matcher =
     let matcher = function
       | Data (_,_,msg) -> match_fn msg
-      | _ -> false in
-    let match_handler' = function
-      | Data (_,_,msg) -> match_handler msg
-      | _ -> assert false in
-    (matcher, match_handler')      
+      | _ -> None in
+    matcher      
 
   let termination_case (handler_fn:(monitor_reason -> 'a t)) : 'a matcher = 
-    let matcher' = function
-      | Exit _ -> true
-      | _ -> false in
-    let match_handler' = function
-      | Exit (_,reason) -> handler_fn reason
-      | _ -> assert false in
-    (matcher', match_handler')     
+    let matcher = function
+      | Exit (_,reason) -> Some (fun () -> handler_fn reason)
+      | _ -> None in
+    matcher     
 
   let receive ?timeout_duration (matchers : 'a matcher list)  : 'a option t =
     let open I in
@@ -675,15 +669,17 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     let rec iter_fn ns pid match_fns candidate_msg =
       match match_fns with
       | [] -> (temp_push_fn (Some candidate_msg)) ; false
-      | (matcher,handler)::xs -> 
-        if matcher candidate_msg
-        then 
-          begin
-            restore_mailbox ns pid ; 
-            result := Some (handler candidate_msg) ; 
-            true
-          end                       
-        else iter_fn ns pid xs candidate_msg in
+      | matcher::xs ->
+        begin
+          match matcher candidate_msg with
+          | None -> iter_fn ns pid xs candidate_msg
+          | Some fn ->
+            begin
+              restore_mailbox ns pid ; 
+              result := Some (fn ()) ; 
+              true
+            end   
+        end in
 
     let rec iter_stream iter_fn stream =
       get stream >>= fun v ->

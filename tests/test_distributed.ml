@@ -268,7 +268,7 @@ let test_spawn_remote_remote_config _ =
       assert_bool "process should not have spawned yet" (!spawn_res = None) ;
       spawn (List.hd nodes) (fun () -> Consumer.send pid_to_send_to "spawned") >>= fun (_, mon_res) ->      
       receive ~timeout_duration:0.05 [
-        case (fun _ -> true) (fun v -> return v)
+        case (fun v -> Some (fun () -> return v))
       ] >>= fun msg ->
       spawn_res := msg ;
       mres := mon_res ;
@@ -888,8 +888,12 @@ let test_broadcast_local_only _ =
   let loop_back_received = ref None in                         
   let recv_proc () = P.(        
       receive [
-        case ((=) "broadcast message") (fun _ -> return (broadcast_received := !broadcast_received +1)) ;
-        case (fun _ -> true)           (fun _ -> return ())
+        case (
+          function 
+          | "broadcast message" -> Some (fun () -> return (broadcast_received := !broadcast_received +1))
+          | _ -> None
+        ) ;
+        case (fun _ -> Some (fun () -> return ()))
       ] >>= fun _ ->
       return ()      
     ) in      
@@ -899,7 +903,7 @@ let test_broadcast_local_only _ =
       spawn local_node recv_proc >>= fun _ ->
       broadcast local_node "broadcast message" >>= fun () ->
       receive ~timeout_duration:0.05 [
-        case (fun _ -> true) (fun m -> return m)       
+        case (fun m -> Some (fun () -> return m))       
       ] >>= fun recv_res ->
       loop_back_received := recv_res ;            
       return ()
@@ -924,8 +928,12 @@ let test_broadcast_remote_local _ =
   let loop_back_received = ref None in                            
   let recv_proc () = P.(        
       receive [
-        case ((=) "broadcast message") (fun _ -> return (broadcast_received := !broadcast_received +1)) ;
-        case (fun _ -> true)           (fun _ -> return ())
+        case (
+          function 
+          | "broadcast message" -> Some (fun () -> return (broadcast_received := !broadcast_received +1))
+          | _ -> None
+        ) ;
+        case (fun _ -> Some (fun () -> return ()))
       ] >>= fun _ ->
       return ()      
     ) in      
@@ -935,7 +943,7 @@ let test_broadcast_remote_local _ =
       spawn local_node recv_proc >>= fun _ ->
       broadcast local_node "broadcast message" >>= fun () ->
       receive ~timeout_duration:0.05 [
-        case (fun _ -> true) (fun m -> return m)       
+        case (fun m -> Some (fun () -> return m))       
       ] >>= fun recv_res ->
       loop_back_received := recv_res ;      
       return ()
@@ -980,8 +988,12 @@ let test_broadcast_remote_remote _ =
   let loop_back_received = ref None in                             
   let recv_proc to_send_pid () = Consumer.(        
       receive [
-        case ((=) "broadcast message") (fun _ -> send to_send_pid "incr") ;
-        case (fun _ -> true)           (fun _ -> return ())
+        case (
+          function 
+          | "broadcast message" -> Some (fun () -> send to_send_pid "incr")
+          | _ -> None
+        ) ;
+        case (fun _ -> Some (fun _ -> return ()))
       ] >>= fun _ ->
       return ()      
     ) in      
@@ -1003,9 +1015,17 @@ let test_broadcast_remote_remote _ =
       broadcast (List.hd rnodes) "broadcast message" >>= fun () ->
       let rec receive_loop () =
         receive ~timeout_duration:0.05 [
-          case ((=) "incr")              (fun _ -> return (broadcast_received := !broadcast_received +1)) ;
-          case ((=) "broadcast message") (fun _ -> return (loop_back_received := Some "broadcast message")) ;          
-          case (fun _ -> true)           (fun _ -> return ())       
+          case (
+            function 
+            | "incr" -> Some (fun () -> return (broadcast_received := !broadcast_received +1))
+            | _ -> None
+          ) ;
+          case (
+            function
+            | "broadcast message" -> Some (fun _ -> return (loop_back_received := Some "broadcast message"))
+            | _ -> None
+          ) ;          
+          case (fun _ -> Some (fun _ -> return ()))       
         ] >>= fun res ->
         if res = None
         then return ()
@@ -1036,8 +1056,12 @@ let test_send_local_only _ =
   let send_failed = ref false in                  
   let recv_proc () = P.(        
       receive [
-        case ((=) "sent message") (fun _ -> return (received_message := Some "sent message")) ;
-        case (fun _ -> true)      (fun _ -> return ())
+        case (
+          function 
+          | "sent message" -> Some (fun () -> return (received_message := Some "sent message"))
+          | _ -> None
+        ) ;
+        case (fun _ -> Some (fun _ -> return ()))
       ] >>= fun _ ->
       return ()      
     ) in      
@@ -1082,8 +1106,12 @@ let test_send_remote_local _ =
   let send_failed = ref false in                  
   let recv_proc () = P.(        
       receive [
-        case ((=) "sent message") (fun _ -> return (received_message := Some "sent message")) ;
-        case (fun _ -> true)      (fun _ -> return ())
+        case (
+          function 
+          | "sent message" -> Some (fun () -> return (received_message := Some "sent message"))
+          | _ -> None
+        ) ;
+        case (fun _ -> Some (fun _ -> return ()))
       ] >>= fun _ ->
       return ()      
     ) in      
@@ -1147,8 +1175,12 @@ let test_send_remote_remote _ =
   let send_failed = ref false in                               
   let recv_proc to_send_pid () = Consumer.(        
       receive [
-        case ((=) "sent message") (fun _ -> send to_send_pid "incr") ;
-        case (fun _ -> true)      (fun _ -> return ())
+        case (
+          function
+          | "sent message" -> Some (fun () -> send to_send_pid "incr")
+          | _ -> None
+        ) ;
+        case (fun _ -> Some (fun () -> return ()))
       ] >>= fun _ ->
       return ()      
     ) in      
@@ -1172,7 +1204,11 @@ let test_send_remote_remote _ =
       send pid4 "sent message" >>= fun () ->
       let rec receive_loop () =
         receive ~timeout_duration:0.05 [
-          case ((=) "incr")              (fun _ -> return (sent_received := !sent_received +1)) ;
+          case (
+            function 
+            | "incr" -> Some (fun () -> return (sent_received := !sent_received +1))
+            | _ -> None
+          ) ;
           termination_case 
             (function
               | Normal term_pid -> 
@@ -1183,7 +1219,7 @@ let test_send_remote_remote _ =
                   )
               | _ -> return (send_failed := true)
             ) ;                         
-          case (fun _ -> true)            (fun _ -> return ())       
+          case (fun _ -> Some (fun () -> return ()))       
         ] >>= fun res ->
         if res = None
         then return ()
@@ -1696,12 +1732,14 @@ let test_selective_receive_local_config _ =
   let receiver_proc () = P.(                      
       lift_io (Test_io.sleep 0.1) >>= fun () ->
       receive [
-        case ((=) "the one")
-          (fun v -> return (selective_message := Some v))
+        case (
+          function 
+          | "the one" -> Some (fun () -> return (selective_message := Some "the one"))
+          | _ -> None
+        ) 
       ] >>= fun _ ->
       receive_loop ~timeout_duration:0.1 [
-        case (fun _ -> true)
-          (fun v -> other_messages_inorder := (v::(!other_messages_inorder)) ; return true)
+        case (fun v -> Some (fun () -> other_messages_inorder := (v::(!other_messages_inorder)) ; return true))
       ]         
     ) in             
   let sender_proc receiver_pid () = P.(
@@ -1742,12 +1780,14 @@ let test_selective_receive_local_remote_config _ =
   let receiver_proc () = P.(                      
       lift_io (Test_io.sleep 0.1) >>= fun () ->
       receive [
-        case ((=) "the one")
-          (fun v -> return (selective_message := Some v))
+        case (
+          function 
+          | "the one" -> Some (fun () -> return (selective_message := Some "the one"))
+          | _ -> None
+        ) 
       ] >>= fun _ ->
       receive_loop ~timeout_duration:0.1 [
-        case (fun _ -> true)
-          (fun v -> other_messages_inorder := (v::(!other_messages_inorder)) ; return true)
+        case (fun v -> Some (fun () -> other_messages_inorder := (v::(!other_messages_inorder)) ; return true))
       ]         
     ) in             
   let sender_proc receiver_pid () = P.(
@@ -1799,12 +1839,14 @@ let test_selective_receive_remote_remote_config _ =
   let receiver_proc () = Consumer.(                      
       lift_io (Test_io.sleep 0.1) >>= fun () ->
       receive [
-        case ((=) "the one")
-          (fun v -> return (selective_message := Some v))
+        case (
+          function 
+          | "the one" -> Some (fun () -> return (selective_message := Some "the one"))
+          | _ -> None
+        ) 
       ] >>= fun _ ->
       receive_loop ~timeout_duration:0.1 [
-        case (fun _ -> true)
-          (fun v -> other_messages_inorder := (v::(!other_messages_inorder)) ; return true)
+        case (fun v -> Some (fun () -> other_messages_inorder := (v::(!other_messages_inorder)) ; return true))
       ]         
     ) in             
   let sender_proc receiver_pid () = Producer.(

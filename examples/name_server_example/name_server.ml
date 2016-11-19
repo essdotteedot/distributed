@@ -1,5 +1,5 @@
 (* The name server provides registration of names to process ids.
-   
+
    main_proc
      - spawn and monitor registra, if registra goes down it's restarted
 
@@ -40,53 +40,53 @@ let option_get = function
 let wait_for_register_proc pid_to_send_to name_to_wait_for () = D.(
     let pid = ref None in
     receive_loop [
-      case (function Message.Register _ -> true | _ -> false)
+      case 
         (function
-          | Message.Register (name, registered_pid) ->
-            if name = name_to_wait_for 
-            then (pid := Some registered_pid ; return false)
-            else return true
-          | _ -> assert false
+          | Message.Register (name, registered_pid) -> Some (fun () ->
+              if name = name_to_wait_for 
+              then (pid := Some registered_pid ; return false)
+              else return true)
+          | _ -> None
         ) ;
-      case (fun _ -> true) 
-        (fun _ -> return true) 
+      case  
+        (fun _ -> Some (fun () -> return true)) 
     ] >>= fun () ->
     pid_to_send_to >! (Message.Whois_result (option_get !pid)) 
   )  
 
 let registra () = D.(
     receive_loop [
-      case (function Message.Register _ -> true | _ -> false)
+      case 
         (function
-          | Message.Register (name, registered_pid) ->
-            Hashtbl.add named_processes name registered_pid ;
-            registered_pid >! Message.Register_ok >>= fun () ->
-            lift_io (Lwt_io.printlf "Successfully registered name %s" name) >>= fun () ->
-            return true
-          | _ -> assert false
+          | Message.Register (name, registered_pid) -> Some (fun () ->
+              Hashtbl.add named_processes name registered_pid ;
+              registered_pid >! Message.Register_ok >>= fun () ->
+              lift_io (Lwt_io.printlf "Successfully registered name %s" name) >>= fun () ->
+              return true)
+          | _ -> None
         );
-      case (function Message.Whois _ -> true  | _ -> false)
+      case 
         (function
-          | Message.Whois (name,requester_pid) ->
-            catch 
-              (fun () ->
-                 let pid = Hashtbl.find named_processes name in
-                 requester_pid >! Message.Whois_result pid >>= fun () ->
-                 lift_io (Lwt_io.printlf "Lookup of processes named %s succeeded" name) >>= fun () ->
-                 return true                
-              )
-              (fun _ -> 
-                 get_self_node >>= fun self_node ->
-                 spawn self_node (wait_for_register_proc requester_pid name) >>= fun _ ->
-                 lift_io (Lwt_io.printlf "Lookup of processes named %s failed, waiting for registration" name) >>= fun () ->
-                 return true
-              )
-          | _ -> assert false
+          | Message.Whois (name,requester_pid) -> Some (fun () ->
+              catch 
+                (fun () ->
+                   let pid = Hashtbl.find named_processes name in
+                   requester_pid >! Message.Whois_result pid >>= fun () ->
+                   lift_io (Lwt_io.printlf "Lookup of processes named %s succeeded" name) >>= fun () ->
+                   return true                
+                )
+                (fun _ -> 
+                   get_self_node >>= fun self_node ->
+                   spawn self_node (wait_for_register_proc requester_pid name) >>= fun _ ->
+                   lift_io (Lwt_io.printlf "Lookup of processes named %s failed, waiting for registration" name) >>= fun () ->
+                   return true
+                ))
+          | _ -> None
         ) ;
-      case (fun _ -> true)
-        (fun m ->
-           lift_io (Lwt_io.printlf "Ignoring message %s" (Message.string_of_message m)) >>= fun () -> 
-           return true
+      case (
+        (fun m -> Some (fun () ->
+             lift_io (Lwt_io.printlf "Ignoring message %s" (Message.string_of_message m)) >>= fun () -> 
+             return true))
         )
     ]
   )
@@ -101,8 +101,8 @@ let main_proc () = D.(
             spawn ~monitor:true self_node registra >>= fun _ ->
             return true
         ) ;
-      case (fun _ -> true)
-        (fun _ -> return true)
+      case 
+        (fun _ -> Some (fun () -> return true))
     ]
   )
 

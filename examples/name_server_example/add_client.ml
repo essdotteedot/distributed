@@ -48,11 +48,11 @@ let rec add_forever add_pid () = D.(
     let y = Random.int 100 in
     add_pid >! (Message.Add (x, y, self_pid)) >>= fun () ->
     receive ~timeout_duration:0.5 [
-      case (function Message.Add_result _ -> true | _ -> false)
+      case 
         (function
-          | Message.Add_result r ->
-            lift_io (Lwt_io.printlf "Sucessfully added %d and %d, result of %d." x y r)             
-          | _ -> assert false
+          | Message.Add_result r -> Some (fun () -> 
+              lift_io (Lwt_io.printlf "Sucessfully added %d and %d, result of %d." x y r))             
+          | _ -> None
         )            
     ] >>= function
     | None -> 
@@ -66,10 +66,10 @@ let rec find_remote_process add_node () = D.(
     get_self_pid >>= fun self_pid ->
     broadcast add_node (Message.Whois ("add_process", self_pid)) >>= fun () ->    
     receive ~timeout_duration:0.5 [
-      case (function Message.Whois_result _ -> true | _ -> false)
+      case 
         (function 
-          | Message.Whois_result add_pid -> return add_pid          
-          | _ -> assert false
+          | Message.Whois_result add_pid -> Some (fun () -> return add_pid)          
+          | _ -> None
         )         
     ] >>= function
     | None ->
@@ -89,8 +89,8 @@ let rec find_remote_process add_node () = D.(
               lift_io (Lwt_unix.sleep 1.0) >>= fun () ->
               return false
           ) ;
-        case (fun _ -> true)
-          (fun _ -> return true)
+        case 
+          (fun _ -> Some (fun () -> return true))
       ] >>= fun _ ->      
       find_remote_process add_node ()
   )   
@@ -116,8 +116,8 @@ let rec main_proc () = D.(
             lift_io (Lwt_io.printl "Add process died, respawning it") >>= fun () ->
             return false          
         ) ;
-      case (fun _ -> true)
-        (fun _ -> return true)
+      case 
+        (fun _ -> Some (fun () -> return true))
     ] >>= fun _ ->
     main_proc ()
   )  

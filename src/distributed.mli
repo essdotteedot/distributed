@@ -252,9 +252,10 @@ module type Process = sig
       If [node_id] is an unknown node then {!exception:InvalidNode} exception is raised.
   *) 
 
-  val case : (message_type -> bool) -> (message_type -> 'a t) -> 'a matcher
-  (** [case match_fn handler] will create a {!type:matcher} which will use [match_fn] to match on potential messages and [handler]
-      to process the matched message .
+  val case : (message_type -> (unit -> 'a t) option) -> 'a matcher
+  (** [case match_fn] will create a {!type:matcher} which will use [match_fn] to match on potential messages.
+      [match_fn] should return [None] to indicate no match or [Some handler] where [handler] is the function
+      that should be called to handle the matching message.
   *)
 
   val termination_case : (monitor_reason -> 'a t) -> 'a matcher
