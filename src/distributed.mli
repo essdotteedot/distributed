@@ -123,12 +123,12 @@ module type Nonblock_io = sig
   val open_connection : Unix.sockaddr -> (input_channel * output_channel) t
   (** [open_connection addr] opens a connection to the given address and returns two channels for using it. *)
 
-  val establish_server : ?backlog:int -> Unix.sockaddr -> (input_channel * output_channel -> unit) -> server
+  val establish_server : ?backlog:int -> Unix.sockaddr -> (input_channel * output_channel -> unit t) -> server t
   (** [establish_server ?backlog sockaddr f] creates a server which will listen for incoming connections. 
       New connections are passed to [f]. Note that [f] must not raise any exception. Backlog is the argument passed to Lwt_unix.listen.
   *)
 
-  val shutdown_server : server -> unit
+  val shutdown_server : server -> unit t
   (** [shutdown_server server] will shutdown [server]. *)    
 
   val log : ?exn:exn -> ?location:string * int * int -> logger:logger -> level:level -> string -> unit t

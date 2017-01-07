@@ -55,7 +55,7 @@ module IO_LWT = struct
 
   let open_connection sock_addr = Lwt_io.open_connection sock_addr
 
-  let establish_server ?backlog sock_addr server_fn = Lwt_io.establish_server ?backlog sock_addr server_fn
+  let establish_server ?backlog sock_addr server_fn = Lwt_io.Versioned.establish_server_2 ?backlog sock_addr server_fn
 
   let of_lwt_level = function
     | Debug -> Lwt_log.Debug 
@@ -68,7 +68,7 @@ module IO_LWT = struct
   let log ?exn ?location ~(logger:logger) ~(level:level) (msg:string) =
     Lwt_log.log ?exn ?location ~level:(of_lwt_level level) ~logger msg    
 
-  let shutdown_server = Lwt_io.shutdown_server
+  let shutdown_server = Lwt_io.Versioned.shutdown_server_2
 
   let sleep = Lwt_unix.sleep
 

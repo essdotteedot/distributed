@@ -2,7 +2,7 @@ open OUnit
 
 exception Test_ex
 
-type server_handler = (Lwt_io.input_channel * Lwt_io.output_channel) -> unit
+type server_handler = (Lwt_io.input_channel * Lwt_io.output_channel) -> unit Lwt.t
 
 let established_connections : (Unix.sockaddr,(Lwt_io.input_channel * Lwt_io.output_channel) list * server_handler) Hashtbl.t = Hashtbl.create 10
 
@@ -59,7 +59,7 @@ module Test_io = struct
 
   let lib_name = "Test_io"
 
-  let lib_version = "0.3.0"
+  let lib_version = "0.4.0"
 
   let lib_description = "A Lwt based implementation that uses pipes instead of sockets for testing purposes"              
 
@@ -118,10 +118,10 @@ module Test_io = struct
     let new_in_ch1,new_out_ch1 = Lwt_io.pipe () in    
     Hashtbl.replace established_connections sock_addr ((new_in_ch1,new_out_ch1)::(new_in_ch0,new_out_ch0)::conns,server_fn) ; 
     log ~level:Debug (Format.sprintf "opened connection to %s" (string_of_sock_addr sock_addr)) ~logger:test_logger >>= fun _ ->
-    server_fn (new_in_ch0,new_out_ch1) ;
+    async @@ (fun () -> server_fn (new_in_ch0,new_out_ch1)) ;
     return (new_in_ch1,new_out_ch0)
 
-  let establish_server ?backlog sock_addr server_fn =     
+  let establish_server ?backlog sock_addr server_fn : server t =     
     async (fun () -> log ~level:Debug (Format.sprintf "establised connection for %s" (string_of_sock_addr sock_addr)) ~logger:test_logger) ;
     Hashtbl.replace established_connections sock_addr ([],server_fn) ;
     async (
@@ -134,9 +134,10 @@ module Test_io = struct
              )
           ) 
           ~logger:test_logger
-    ) 
+    ) ;
+    return ()
 
-  let shutdown_server = ignore
+  let shutdown_server (s : server) : unit t = return ()
 
   let sleep = Lwt_unix.sleep
 

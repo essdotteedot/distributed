@@ -24,7 +24,8 @@ build-doc: [ "ocaml" "setup.ml" "-doc" ]
 depends: [
   "base-threads"
   "base-unix"
-  "lwt"
+  "lwt" {>= "2.7.0"}
+  "ocamlbuild" {build}
   "ocamlfind" {build}
   "ounit" {test & >= "2.0"}
 ]

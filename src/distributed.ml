@@ -144,9 +144,9 @@ module type Nonblock_io = sig
 
   val open_connection : Unix.sockaddr -> (input_channel * output_channel) t
 
-  val establish_server : ?backlog:int -> Unix.sockaddr -> (input_channel * output_channel -> unit) -> server
+  val establish_server : ?backlog:int -> Unix.sockaddr -> (input_channel * output_channel -> unit t) -> server t
 
-  val shutdown_server : server -> unit  
+  val shutdown_server : server -> unit t  
 
   val log : ?exn:exn -> ?location:string * int * int -> logger:logger -> level:level -> string -> unit t 
 
@@ -930,7 +930,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       let res : Node_id.t list = Node_id_hashtbl.fold (fun n _ acc -> n::acc) ns.remote_nodes [] in      
       I.return (ns,pid,res)
 
-  let node_server_fn (ns : node_state) ((in_ch,out_ch) : I.input_channel * I.output_channel) : unit =
+  let node_server_fn (ns : node_state) ((in_ch,out_ch) : I.input_channel * I.output_channel) : unit I.t =
     let open I in
     let remote_config = Potpourri.get_option !(ns.config) in
     let node = ref None in    
@@ -1091,7 +1091,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         )
         (function e -> clean_up_fn () ; log_msg ns ~exn:e ~level:Error "node process message" "unexpected exception") in
 
-    async wait_for_node_msg 
+    wait_for_node_msg ()
 
   let connect_to_remote_nodes_unsafe ?pid (ns : node_state) (remote_node : Node_id.t) (ip : string) (port : int) (name : string) (remote_sock_addr : Unix.sockaddr) : unit I.t =  
     let open I in
@@ -1100,7 +1100,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     write_value out_ch @@ Node (ns.local_node) >>= fun () ->               
     Node_id_hashtbl.replace ns.remote_nodes remote_node out_ch ;
     Node_id_hashtbl.replace ns.remote_nodes_heart_beats remote_node false ;
-    node_server_fn ns (in_ch,out_ch) ;
+    async (fun () -> node_server_fn ns (in_ch,out_ch)) ;
     log_msg ns ~level:Notice "connected to remote node" (Format.sprintf "remote node %s:%d, name %s" ip port name) 
 
   let add_remote_node (ip : string) (port : int) (name : string) : Node_id.t t =
@@ -1182,7 +1182,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
          if (not recvd_hear_beat) 
          then 
            match (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes node) with
-           | None -> async @@ fun () -> return ()
+           | None -> ()
            | Some out_ch -> 
              begin 
                Node_id_hashtbl.remove ns.remote_nodes node ; 
@@ -1258,13 +1258,13 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
           log_msg ns ~level:Info "node start up" (Format.sprintf "remote mode with configuration of %s" @@ string_of_config node_config) >>= fun () ->
           connect_to_remote_nodes ns remote_config.Remote_config.remote_nodes >>= fun () ->
           let local_sock_addr =  Unix.ADDR_INET (Unix.inet6_addr_any , remote_config.Remote_config.local_port) in
-          let command_process_server = I.establish_server ~backlog:remote_config.Remote_config.connection_backlog local_sock_addr (node_server_fn ns) in
+          I.establish_server ~backlog:remote_config.Remote_config.connection_backlog local_sock_addr (node_server_fn ns) >>= fun (command_process_server) ->
           async (fun () -> send_heart_beats_fn ns remote_config.Remote_config.heart_beat_frequency) ;
           async (fun () -> process_remote_heart_beats_timeout_fn ns remote_config.Remote_config.heart_beat_timeout) ; 
           at_exit (
             fun () ->
               log_msg ns ~level:Info "node shutting down" (Format.sprintf "start clean up actions for remote mode with configuration of %s" @@ string_of_config node_config) >>= fun () ->
-              shutdown_server command_process_server ;
+              shutdown_server command_process_server >>= fun () ->
               Node_id_hashtbl.fold (fun _ out_ch _ -> I.close_output out_ch) ns.remote_nodes (return ()) >>= fun () ->
               log_msg ns ~level:Info "node shutting down" (Format.sprintf "finished clean up actions for remote mode with configuration of %s" @@ string_of_config node_config)                                                                                  
           );   
