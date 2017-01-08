@@ -9,7 +9,8 @@ script:
 env:
   - OCAML_VERSION=4.02 PACKAGE=distributed
   - OCAML_VERSION=4.03 PACKAGE=distributed
-  - OCAML_VERSION=4.04 PACKAGE=distributed 
+  - OCAML_VERSION=4.04 PACKAGE=distributed  
+  - COV_CONF="./configure --enable-tests" 
 os:
   - linux
   - osx
