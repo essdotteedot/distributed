@@ -5,7 +5,7 @@ install:
   - wget https://raw.githubusercontent.com/simonjbeaumont/ocaml-travis-coveralls/master/travis-coveralls.sh
 script: 
   - bash -ex .travis-opam.sh
-  - if dpkg --compare-versions $OCAML_VERSION eq 4.02; then COV_CONF="./configure --enable-tests" bash -ex travis-coveralls.sh; fi
+  - COV_CONF="./configure --enable-tests" bash -ex travis-coveralls.sh
 env:
   - OCAML_VERSION=4.02 PACKAGE=distributed
   - OCAML_VERSION=4.03 PACKAGE=distributed
