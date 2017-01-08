@@ -1,1 +1,1 @@
-file "tests/test_distributed.ml" [ regexp ".*" ];
+file "tests/test_distributed.ml" [ regexp ".*" ]
