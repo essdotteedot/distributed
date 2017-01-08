@@ -7,10 +7,11 @@ script:
   - bash -ex .travis-opam.sh
   - bash -ex travis-coveralls.sh
 env:
-  - OCAML_VERSION=4.02 PACKAGE=distributed
-  - OCAML_VERSION=4.03 PACKAGE=distributed
-  - OCAML_VERSION=4.04 PACKAGE=distributed  
-  - COV_CONF="./configure --enable-tests" 
+  global:
+    - OCAML_VERSION=4.02 PACKAGE=distributed
+    - OCAML_VERSION=4.03 PACKAGE=distributed
+    - OCAML_VERSION=4.04 PACKAGE=distributed  
+    - COV_CONF="./configure --enable-tests" 
 os:
   - linux
   - osx
