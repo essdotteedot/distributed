@@ -5,7 +5,7 @@ install:
   - wget https://raw.githubusercontent.com/simonjbeaumont/ocaml-travis-coveralls/master/travis-coveralls.sh
 script: 
   - bash -ex .travis-opam.sh
-  - bash -ex travis-coveralls.sh
+  - if $TRAVIS_OS_NAME eq linux; then bash -ex travis-coveralls.sh; fi
 env:
   global:
     - COV_CONF="./configure --enable-tests" 
