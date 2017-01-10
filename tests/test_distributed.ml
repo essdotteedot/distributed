@@ -1,3 +1,4 @@
+(*BISECT-IGNORE-BEGIN*)
 open OUnit
 
 exception Test_ex
@@ -1936,3 +1937,4 @@ let suite = "Test Distributed" >::: [
 
 let _ = 
   run_test_tt_main suite 				 
+(*BISECT-IGNORE-END*)
