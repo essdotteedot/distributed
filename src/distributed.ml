@@ -615,7 +615,8 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                 (Format.sprintf "on remote node %s, local process %s" (Node_id.string_of_node node_id) (Process_id.string_of_pid pid)) >>= fun () ->
               sync_send (Process_id.get_id pid) ns ~flags:[Marshal.Closures] out_ch (fun receiver_pid -> (Spawn_monitor (p (),pid,receiver_pid))) 
                 (fun res ->
-                   let Monitor_Ref (_,_,monitored_proc) as mref = match res with Spawn_monitor_result (_,mr,_) -> mr | _ -> assert false in
+                   let Monitor_Ref (_,_,monitored_proc) as mref = match res with Spawn_monitor_result (_,mr,_) -> mr 
+                                                                               | _ -> assert false in (*BISECT-IGNORE*)
                    log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawned and monitored remote process" 
                      (Format.sprintf "spawned on remote node %s : result pid %s, result monitor reference : %s" 
                         (Node_id.string_of_node node_id) (Process_id.string_of_pid monitored_proc) (string_of_monitor_ref mref)) >>= fun () ->
@@ -628,7 +629,8 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                 (Format.sprintf "on remote node %s, local process %s" (Node_id.string_of_node node_id) (Process_id.string_of_pid pid)) >>= fun () ->
               sync_send (Process_id.get_id pid) ns ~flags:[Marshal.Closures] out_ch (fun receiver_pid -> (Proc (p (),receiver_pid))) 
                 (fun res ->
-                   let remote_proc_pid = match res with Proc_result (r,_) -> r | _ -> assert false in 
+                   let remote_proc_pid = match res with Proc_result (r,_) -> r 
+                                                      | _ -> assert false in (*BISECT-IGNORE*)
                    log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawned remote process" 
                      (Format.sprintf "on remote node %s : result pid %s" 
                         (Node_id.string_of_node node_id) (Process_id.string_of_pid remote_proc_pid)) >>= fun () -> 
@@ -867,7 +869,8 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
           let node_found_fn out_ch = 
             sync_send (Process_id.get_id pid) ns out_ch (fun receiver_pid -> (Monitor (pid, pid_to_monitor,receiver_pid))) 
               (fun res ->
-                 let res' = match res with Monitor_result (mon_msg,mon_res,_) -> (mon_msg,mon_res) | _ -> assert false in
+                 let res' = match res with Monitor_result (mon_msg,mon_res,_) -> (mon_msg,mon_res) 
+                                         | _ -> assert false in (*BISECT-IGNORE*)
                  log_msg ~pid:(Process_id.get_id pid) ns ~level:I.Debug "successfully monitored remote process" 
                    (Format.sprintf "result: %s" (string_of_message res)) >>= fun () -> 
                  return (ns, pid, monitor_response_handler ns res')
@@ -1064,10 +1067,10 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                  handler ()
                end) 
           (function e -> 
-            clean_up_fn () ; 
-            log_msg ns ~exn:e ~level:Error "node process message" @@ 
-            Format.sprintf "unexpected exception while processing messages for remote node %s"  
-              (Node_id.string_of_node @@ Potpourri.get_option !node)
+             clean_up_fn () ; 
+             log_msg ns ~exn:e ~level:Error "node process message" @@ 
+             Format.sprintf "unexpected exception while processing messages for remote node %s"  
+               (Node_id.string_of_node @@ Potpourri.get_option !node)
           ) in
 
     let rec wait_for_node_msg () =

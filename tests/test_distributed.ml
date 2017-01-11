@@ -1,3 +1,4 @@
+(*BISECT-IGNORE-BEGIN*)
 open OUnit
 
 exception Test_ex
@@ -1897,7 +1898,7 @@ let test_multiple_run_node _ =
         (fun () -> P.run_node node_config)
         (function
           | P.Init_more_than_once -> exception_thrown := Some true ; return ()
-          | _ -> return ())
+          | _ -> return ()) >>= fun () -> (get_option !exit_fn) ()
     )) ;
   assert_equal ~msg:"Init more than once failed, did not get exception" (Some true) !exception_thrown ;
   assert_equal 0 (Hashtbl.length established_connections) 
@@ -1919,7 +1920,7 @@ let test_get_remote_node_local_only _ =
           | Some _ -> nonexistent_remote_node_result := Some "fail" ; return ())
     ) in 
 
-  Lwt_main.run (P.run_node node_config ~process:p) ;
+  Lwt.(Lwt_main.run ((P.run_node node_config ~process:p)  >>= fun _ -> (get_option !exit_fn) ())) ;
   assert_equal ~msg:"get_remote_node failed locally, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
   assert_equal ~msg:"get_remote_node failed locally, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
   assert_equal 0 (Hashtbl.length established_connections)
@@ -1946,7 +1947,7 @@ let test_get_remote_node_local_remote_config _ =
           | None -> nonexistent_remote_node_result := Some "ran" ; return ()
           | Some _ -> nonexistent_remote_node_result := Some "fail" ; return ())
     ) in 
-  Lwt_main.run (P.run_node node_config ~process:p) ;
+  Lwt.(Lwt_main.run ((P.run_node node_config ~process:p)  >>= fun () -> (get_option !exit_fn) ()));
   assert_equal ~msg:"get_remote_node failed locally with remote config, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
   assert_equal ~msg:"get_remote_node failed locally with remote config, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
   Hashtbl.iter (fun _ (pipes,_) -> close_pipes pipes) established_connections ;
@@ -2019,6 +2020,7 @@ let test_get_remote_node_remote_remote_config _ =
       assert_equal ~msg:"get_remote_node failed remotely, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
       assert_equal ~msg:"get_remote_node failed remotely, existent node was not in remote nodes" (Some "ran") !exitent_remote_node_result ;
       assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      (get_option !exit_fn) () >>= fun () ->
       Hashtbl.iter (fun _ (pipes,_) -> close_pipes pipes) established_connections ;
       return @@ Hashtbl.clear established_connections 
     ) 
@@ -2082,10 +2084,10 @@ let suite = "Test Distributed" >::: [
 
     "Test get_remote_node local only"                                     >:: test_get_remote_node_local_only ;
     "Test get_remote_node local with remote config"                       >:: test_get_remote_node_local_remote_config ;
-    (*"Test get_remote_node_remote remote config"                           >:: test_get_remote_node_remote_remote_config*)
+    "Test get_remote_node_remote remote config"                           >:: test_get_remote_node_remote_remote_config
   ]
 
 let _ = 
   run_test_tt_main suite 				 
 
-
+(*BISECT-IGNORE-END*)
