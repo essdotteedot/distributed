@@ -1,6 +1,6 @@
 let get_option (v : 'a option) : 'a = 
   match v with
-  | None -> assert false
+  | None -> assert false (*BISECT-IGNORE*)
   | Some v' -> v'
 
 let map_default_option (f : ('a -> 'b)) (default_value : 'b) (opt : 'a option) : 'b =

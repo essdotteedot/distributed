@@ -40,24 +40,19 @@ let option_get = function
 let wait_for_register_proc pid_to_send_to name_to_wait_for () = D.(
     let pid = ref None in
     receive_loop [
-      case 
-        (function
+      case (function
           | Message.Register (name, registered_pid) -> Some (fun () ->
               if name = name_to_wait_for 
               then (pid := Some registered_pid ; return false)
               else return true)
-          | _ -> None
-        ) ;
-      case  
-        (fun _ -> Some (fun () -> return true)) 
+          |  _ -> Some (fun () -> return true)) 
     ] >>= fun () ->
     pid_to_send_to >! (Message.Whois_result (option_get !pid)) 
   )  
 
 let registra () = D.(
     receive_loop [
-      case 
-        (function
+      case (function
           | Message.Register (name, registered_pid) -> Some (fun () ->
               Hashtbl.add named_processes name registered_pid ;
               registered_pid >! Message.Register_ok >>= fun () ->
@@ -65,8 +60,7 @@ let registra () = D.(
               return true)
           | _ -> None
         );
-      case 
-        (function
+      case (function
           | Message.Whois (name,requester_pid) -> Some (fun () ->
               catch 
                 (fun () ->
@@ -87,7 +81,7 @@ let registra () = D.(
         (fun m -> Some (fun () ->
              lift_io (Lwt_io.printlf "Ignoring message %s" (Message.string_of_message m)) >>= fun () -> 
              return true))
-        )
+      )
     ]
   )
 
@@ -95,8 +89,7 @@ let main_proc () = D.(
     get_self_node >>= fun self_node ->
     spawn ~monitor:true self_node registra >>= fun _ ->
     receive_loop [
-      termination_case 
-        (function
+      termination_case (function
           | _ -> 
             spawn ~monitor:true self_node registra >>= fun _ ->
             return true

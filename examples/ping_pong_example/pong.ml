@@ -18,8 +18,7 @@ let counter = ref 0
 
 let pong () = D.(
     receive_loop [
-      case  
-        (function
+      case (function
           | Ping_message.Ping s -> Some (fun () -> 
               lift_io (Lwt_io.printl @@ Format.sprintf "Got message Ping %s" s) >>= fun () ->
               get_remote_node "ping_node" >>= 
@@ -33,12 +32,9 @@ let pong () = D.(
                   counter := !counter + 1 ;
                   return true
               end)
-          | _ -> None
-        ) ;
-      case  
-        (fun v -> Some (fun () -> 
-             lift_io (Lwt_io.printl @@ Format.sprintf "Got unexpected message %s" (Ping_message.string_of_message v)) >>= fun () ->
-             assert false)
+          | v -> Some (fun () -> 
+              lift_io (Lwt_io.printl @@ Format.sprintf "Got unexpected message %s" (Ping_message.string_of_message v)) >>= fun () ->
+              assert false)
         ) 
     ] 
   )

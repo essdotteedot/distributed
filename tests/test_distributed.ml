@@ -10,8 +10,8 @@ let established_connections : (Unix.sockaddr,(Lwt_io.input_channel * Lwt_io.outp
 let exit_fn : (unit -> unit Lwt.t) option ref = ref None 
 
 (* let test_logger =
-   Lwt_log.add_rule "*" Lwt_log.Debug ; 
-   Lwt_log.channel ~template:"$(date).$(milliseconds) : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout ()  *)   
+  Lwt_log.add_rule "*" Lwt_log.Debug ; 
+  Lwt_log.channel ~template:"$(date).$(milliseconds) : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout ()  *)
 
 let test_logger = Lwt_log.null    
 
@@ -1878,7 +1878,147 @@ let test_selective_receive_remote_remote_config _ =
       Hashtbl.iter (fun _ (pipes,_) -> close_pipes pipes) established_connections ;
       return @@ Hashtbl.clear established_connections 
     ) 
-  )               
+  )   
+
+(* test that calling run_node more than once results in an exception. *)
+
+let test_multiple_run_node _ =
+  let module P = Distributed.Make (Test_io) (M) in
+  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let exception_thrown = ref None in
+
+  Lwt.(Lwt_main.run (
+      P.run_node node_config >>= fun () ->
+      catch
+        (fun () -> P.run_node node_config)
+        (function
+          | P.Init_more_than_once -> exception_thrown := Some true ; return ()
+          | _ -> return ())
+    )) ;
+  assert_equal ~msg:"Init more than once failed, did not get exception" (Some true) !exception_thrown ;
+  assert_equal 0 (Hashtbl.length established_connections) 
+
+(* test get_remote_node*)
+
+let test_get_remote_node_local_only _ =
+  let module P = Distributed.Make (Test_io) (M) in
+  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let nonexistent_remote_node_result = ref (Some "") in
+  let self_remote_node_result = ref (Some "") in
+
+  let p () = P.(                      
+      get_remote_node "test" >>= (function
+          | None -> self_remote_node_result := Some "ran" ; return ()
+          | Some _ -> self_remote_node_result := Some "fail" ; return ()) >>= fun () ->
+      get_remote_node "foobar" >>= (function
+          | None -> nonexistent_remote_node_result := Some "ran" ; return ()
+          | Some _ -> nonexistent_remote_node_result := Some "fail" ; return ())
+    ) in 
+
+  Lwt_main.run (P.run_node node_config ~process:p) ;
+  assert_equal ~msg:"get_remote_node failed locally, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
+  assert_equal ~msg:"get_remote_node failed locally, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
+  assert_equal 0 (Hashtbl.length established_connections)
+
+let test_get_remote_node_local_remote_config _ =
+  let module P = Distributed.Make (Test_io) (M) in
+  let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
+                               P.Remote_config.logger = test_logger ;
+                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.heart_beat_frequency = 2.0 ;
+                               P.Remote_config.heart_beat_timeout = 5.0 ;
+                               P.Remote_config.connection_backlog = 10 ;
+                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.remote_nodes = [] ;
+                             } in
+  let nonexistent_remote_node_result = ref (Some "") in
+  let self_remote_node_result = ref (Some "") in
+
+  let p () = P.(                      
+      get_remote_node "test" >>= (function
+          | None -> self_remote_node_result := Some "ran" ; return ()
+          | Some _ -> self_remote_node_result := Some "fail" ; return ()) >>= fun () ->
+      get_remote_node "foobar" >>= (function
+          | None -> nonexistent_remote_node_result := Some "ran" ; return ()
+          | Some _ -> nonexistent_remote_node_result := Some "fail" ; return ())
+    ) in 
+  Lwt_main.run (P.run_node node_config ~process:p) ;
+  assert_equal ~msg:"get_remote_node failed locally with remote config, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
+  assert_equal ~msg:"get_remote_node failed locally with remote config, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
+  Hashtbl.iter (fun _ (pipes,_) -> close_pipes pipes) established_connections ;
+  Hashtbl.clear established_connections  
+
+let test_get_remote_node_remote_remote_config _ =
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
+  let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
+                                      Producer.Remote_config.logger = test_logger ;
+                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
+                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.connection_backlog = 10 ;
+                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
+                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                    } in
+  let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
+                                        Consumer.Remote_config.logger = test_logger ;
+                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
+                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.connection_backlog = 10 ;
+                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.remote_nodes = [] ;
+                                      } in
+
+  let nonexistent_remote_node_result = ref (Some "") in
+  let self_remote_node_result = ref (Some "") in
+  let exitent_remote_node_result = ref (Some "") in
+
+  let consumer_proc () = Consumer.(
+      return () >>= fun _ ->
+      return (
+        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
+        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
+        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
+      )
+    ) in  
+
+  let p2 () = Consumer.(    
+      exitent_remote_node_result := Some "ran" ; return ()    
+    ) in 
+
+  let p () = Producer.(      
+      return () >>= fun _ ->
+      return (
+        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
+        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
+        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
+      ) >>= fun _ -> 
+      get_remote_node "test" >>= (function
+          | None -> self_remote_node_result := Some "ran" ; return ()
+          | Some _ -> self_remote_node_result := Some "fail" ; return ()) >>= fun () ->
+      get_remote_node "foobar" >>= (function
+          | None -> nonexistent_remote_node_result := Some "ran" ; return ()
+          | Some _ -> nonexistent_remote_node_result := Some "fail" ; return ()) >>= fun () ->
+      get_remote_node "consumer" >>= (function
+          | None -> exitent_remote_node_result := Some "fail" ; return ()
+          | Some n -> 
+            (spawn ~monitor:true n p2 >>= fun (_,_) ->
+             receive [termination_case (function _ -> return ())]) >>= fun _ -> return ())
+    ) in 
+
+  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;
+  Lwt.(
+    Lwt_main.run (
+      Producer.run_node node_config ~process:p >>= fun () ->
+      assert_equal ~msg:"get_remote_node failed remotely, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
+      assert_equal ~msg:"get_remote_node failed remotely, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
+      assert_equal ~msg:"get_remote_node failed remotely, existent node was not in remote nodes" (Some "ran") !exitent_remote_node_result ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      Hashtbl.iter (fun _ (pipes,_) -> close_pipes pipes) established_connections ;
+      return @@ Hashtbl.clear established_connections 
+    ) 
+  )                
 
 let suite = "Test Distributed" >::: [
     "Test return and bind"                                                >:: test_return_bind ;
@@ -1932,7 +2072,13 @@ let suite = "Test Distributed" >::: [
 
     "Test selective receive with local only config"                       >:: test_selective_receive_local_config ;
     "Test selective_receive local with remoteconfig"                      >:: test_selective_receive_local_remote_config ;
-    "Test selective receive remote with remote config"                    >:: test_selective_receive_remote_remote_config  
+    "Test selective receive remote with remote config"                    >:: test_selective_receive_remote_remote_config ;
+
+    "Test multiple run node calls"                                        >:: test_multiple_run_node ;
+
+    "Test get_remote_node local only"                                     >:: test_get_remote_node_local_only ;
+    "Test get_remote_node local with remote config"                       >:: test_get_remote_node_local_remote_config ;
+    "Test get_remote_node_remote remote config"                           >:: test_get_remote_node_remote_remote_config
   ]
 
 let _ = 

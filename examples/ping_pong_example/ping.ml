@@ -20,15 +20,11 @@ let rec ping_loop (counter : int) () = D.(
     | Some node' ->         
       broadcast node' (Ping_message.Ping (string_of_int counter)) >>= fun () ->
       receive [
-        case  
-          (function 
+        case (function 
             | Ping_message.Pong s -> Some (fun () -> lift_io (Lwt_io.printl @@ Format.sprintf "Got message Pong %s" s))
-            | _ -> None
-          ) ;
-        case  
-          (fun v -> Some (fun () ->
-               lift_io (Lwt_io.printl @@ Format.sprintf "Got unexpected message %s" (Ping_message.string_of_message v)) >>= fun () ->
-               assert false)
+            | v -> Some (fun () ->
+                lift_io (Lwt_io.printl @@ Format.sprintf "Got unexpected message %s" (Ping_message.string_of_message v)) >>= fun () ->
+                assert false)
           )  
       ] >>= fun _ ->    
       lift_io (Lwt_unix.sleep 1.0) >>= fun () ->  
