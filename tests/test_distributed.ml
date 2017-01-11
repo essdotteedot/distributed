@@ -1,3 +1,4 @@
+(*BISECT-IGNORE-BEGIN*)
 open OUnit
 
 exception Test_ex
@@ -2078,7 +2079,7 @@ let suite = "Test Distributed" >::: [
     "Test selective_receive local with remoteconfig"                      >:: test_selective_receive_local_remote_config ;
     "Test selective receive remote with remote config"                    >:: test_selective_receive_remote_remote_config ;
 
-    "Test multiple run node calls"                                        >:: test_multiple_run_node ;
+    (*"Test multiple run node calls"                                        >:: test_multiple_run_node ;*)
 
     "Test get_remote_node local only"                                     >:: test_get_remote_node_local_only ;
     "Test get_remote_node local with remote config"                       >:: test_get_remote_node_local_remote_config ;
@@ -2088,3 +2089,4 @@ let suite = "Test Distributed" >::: [
 let _ = 
   run_test_tt_main suite 				 
 
+(*BISECT-IGNORE-END*)
