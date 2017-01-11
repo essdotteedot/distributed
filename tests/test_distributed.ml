@@ -1661,6 +1661,7 @@ let test_add_remove_nodes_remote_config _ =
   let remote_nodes_at_start = ref [] in
   let remote_nodes_after_remove = ref [] in
   let remote_nodes_after_add = ref [] in   
+  let remote_nodes_after_dup_add = ref [] in   
   let expected_spawn_exception = ref false in
   let expected_monitor_exception = ref false in
   let expected_broadcast_exception = ref false in   
@@ -1677,6 +1678,9 @@ let test_add_remove_nodes_remote_config _ =
       add_remote_node "5.6.7.8" 101 "consumer" >>= fun consumer_node ->
       get_remote_nodes >>= fun nodes_after_add ->
       remote_nodes_after_add := nodes_after_add ;
+      add_remote_node "5.6.7.8" 101 "consumer" >>= fun _ ->
+      get_remote_nodes >>= fun nodes_after_add_dup ->
+      remote_nodes_after_dup_add := nodes_after_add_dup ;
       spawn consumer_node (fun () -> lift_io @@ Test_io.sleep 0.1) >>= fun (rpid,_) ->
       remove_remote_node consumer_node >>= fun () ->
       get_remote_nodes >>= fun nodes_after_remove ->
@@ -1712,6 +1716,7 @@ let test_add_remove_nodes_remote_config _ =
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       assert_equal ~msg:"remote nodes should have been empty before adding" 0 (List.length !remote_nodes_at_start) ;
       assert_equal ~msg:"remote nodes should have 1 remote node after adding" 1 (List.length !remote_nodes_after_add) ;      
+      assert_equal ~msg:"remote nodes should have 1 remote node after adding a dup" 1 (List.length !remote_nodes_after_dup_add) ;      
       assert_equal ~msg:"remote nodes should have been empty after removing" 0 (List.length !remote_nodes_after_remove) ;
       assert_bool "expected InvalidNode exception did not occur when monitoring on removed node" !expected_monitor_exception ;
       assert_bool "expected InvalidNode exception did not occur when spawning on removed node" !expected_spawn_exception ;
