@@ -10,8 +10,8 @@ let established_connections : (Unix.sockaddr,(Lwt_io.input_channel * Lwt_io.outp
 let exit_fn : (unit -> unit Lwt.t) option ref = ref None 
 
 (* let test_logger =
-  Lwt_log.add_rule "*" Lwt_log.Debug ; 
-  Lwt_log.channel ~template:"$(date).$(milliseconds) : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout ()  *)
+   Lwt_log.add_rule "*" Lwt_log.Debug ; 
+   Lwt_log.channel ~template:"$(date).$(milliseconds) : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout ()  *)
 
 let test_logger = Lwt_log.null    
 
@@ -2024,7 +2024,96 @@ let test_get_remote_node_remote_remote_config _ =
       Hashtbl.iter (fun _ (pipes,_) -> close_pipes pipes) established_connections ;
       return @@ Hashtbl.clear established_connections 
     ) 
-  )                
+  )    
+
+(* test heart beat process/receive *)
+let test_heart_beat _ =
+  let module Producer = Distributed.Make (Test_io) (M) in
+  let module Consumer = Distributed.Make (Test_io) (M) in  
+  let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
+                                      Producer.Remote_config.logger = test_logger ;
+                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.heart_beat_frequency = 0.3 ;
+                                      Producer.Remote_config.heart_beat_timeout = 0.12 ;
+                                      Producer.Remote_config.connection_backlog = 10 ;
+                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
+                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                    } in
+  let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
+                                        Consumer.Remote_config.logger = test_logger ;
+                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.heart_beat_frequency = 0.1 ;
+                                        Consumer.Remote_config.heart_beat_timeout = 0.1 ;
+                                        Consumer.Remote_config.connection_backlog = 10 ;
+                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.remote_nodes = [] ;
+                                      } in
+
+  let node_at_start_consumer = ref [] in  
+  let node_after_02_millseconds_consumer = ref [] in
+  let node_at_start_producer = ref [] in
+  let node_after_015_millseconds_producer = ref [] in
+  let node_at_03_milliseconds_producer = ref [] in
+  let node_went_down_consumer = ref None in
+  let node_went_down_producer = ref None in
+
+  let monitor_fn_consumer n = Consumer.(
+     return (node_went_down_consumer := Some (Distributed.Node_id.get_name n))
+  ) in
+
+  let monitor_fn_producer n = Producer.(
+     return (node_went_down_producer := Some (Distributed.Node_id.get_name n))
+  ) in
+
+  let consumer_proc () = Consumer.(
+      return () >>= fun _ ->
+      let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
+      Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
+      Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ;
+      lift_io (Test_io.sleep 0.05) >>= fun () -> (* sleep a little bit to allow for the producer to connect *)      
+      get_remote_nodes >>= fun nodes_at_start ->
+      node_at_start_consumer := nodes_at_start ;
+      lift_io (Test_io.sleep 0.15) >>= fun () ->
+      get_remote_nodes >>= fun nodes_at_02 ->
+      node_after_02_millseconds_consumer := nodes_at_02 ;
+      return ()
+    ) in  
+
+  let p () = Producer.(      
+      return () >>= fun _ ->
+      return (
+        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
+        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
+        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
+      ) >>= fun _ -> 
+      get_remote_nodes >>= fun nodes_at_start ->
+      node_at_start_producer := nodes_at_start ; 
+      lift_io (Test_io.sleep 0.15) >>= fun () -> 
+      get_remote_nodes >>= fun nodes_at_015 ->
+      node_after_015_millseconds_producer := nodes_at_015 ;      
+      lift_io (Test_io.sleep 0.15) >>= fun () ->
+      get_remote_nodes >>= fun nodes_at_03 ->
+      node_at_03_milliseconds_producer := nodes_at_03 ;
+      return ()
+    ) in 
+
+  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc ~node_monitor_fn:monitor_fn_consumer) ;
+  Lwt.(
+    Lwt_main.run (
+      Producer.run_node node_config ~process:p ~node_monitor_fn:monitor_fn_producer >>= fun () ->
+      assert_equal ~msg:"test_heart_beat failed remotely, nodes at start should be of length 1 for consumer" 1 (List.length !node_at_start_consumer) ;
+      assert_equal ~msg:"test_heart_beat failed remotely, nodes at start should be of length 1 for producer" 1 (List.length !node_at_start_producer) ;
+      assert_equal ~msg:"test_heart_beat failed remotely, nodes at 015 should be of length 1 for producer" 1 (List.length !node_after_015_millseconds_producer) ;
+      assert_equal ~msg:"test_heart_beat failed remotely, nodes at 02 should be of length 0 for consumer" 0 (List.length !node_after_02_millseconds_consumer) ;
+      assert_equal ~msg:"test_heart_beat failed remotely, nodes at 03 should be of length 0 for producer" 0 (List.length !node_at_03_milliseconds_producer) ;
+      assert_equal ~msg:"test_heart_beat failed remotely, consumer node monitor function should have been called" (Some "producer") !node_went_down_consumer ;
+      assert_equal ~msg:"test_heart_beat failed remotely, producer node monitor function should have been called" (Some "consumer") !node_went_down_producer ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      (get_option !exit_fn) () >>= fun () ->
+      Hashtbl.iter (fun _ (pipes,_) -> close_pipes pipes) established_connections ;
+      return @@ Hashtbl.clear established_connections 
+    ) 
+  )                  
 
 let suite = "Test Distributed" >::: [
     "Test return and bind"                                                >:: test_return_bind ;
@@ -2084,7 +2173,9 @@ let suite = "Test Distributed" >::: [
 
     "Test get_remote_node local only"                                     >:: test_get_remote_node_local_only ;
     "Test get_remote_node local with remote config"                       >:: test_get_remote_node_local_remote_config ;
-    "Test get_remote_node_remote remote config"                           >:: test_get_remote_node_remote_remote_config
+    "Test get_remote_node_remote remote config"                           >:: test_get_remote_node_remote_remote_config ;
+
+    "Test heartbeat"                                                      >:: test_heart_beat
   ]
 
 let _ = 

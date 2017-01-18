@@ -478,7 +478,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         )
         (fun e -> 
            log_msg ns ~exn:e ~level:Error "sending remote monitor notification" 
-             (Format.sprintf "monitor reference %s, error sending monitor message to remote node %s, marking node as down" 
+             (Format.sprintf "monitor reference %s, error sending monitor message to remote node %s, removing node" 
                 (string_of_monitor_ref mref) (Node_id.string_of_node @@ Process_id.get_node monitoring_process)) >>= fun () ->
            return @@ Node_id_hashtbl.remove ns.remote_nodes (Process_id.get_node monitoring_process)
         ) in           
@@ -978,7 +978,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       then
         let node_str = Node_id.string_of_node (Potpourri.get_option !node) in 
         log_msg ns ~level:Error "node process message" 
-          (Format.sprintf "previously encountered errors when communicating with remote node %s, stopping handler for remote node %s" node_str node_str)
+          (Format.sprintf "remote node %s has been previously removed, stopping handler for remote node %s" node_str node_str)
       else 
         catch
           (fun () ->
@@ -989,7 +989,9 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
              | Node _ -> 
                handler ()            
              | Heartbeat ->
-               Node_id_hashtbl.replace ns.remote_nodes_heart_beats (Potpourri.get_option !node) true ;
+               if (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes_heart_beats (Potpourri.get_option !node)) <> None
+               then Node_id_hashtbl.replace ns.remote_nodes_heart_beats (Potpourri.get_option !node) true 
+               else ();
                handler ()
              | Proc (p,sender_pid) ->
                begin
@@ -1083,6 +1085,9 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
              begin
                node := Some node' ;
                Node_id_hashtbl.replace ns.remote_nodes node' out_ch ;
+               if  (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes_heart_beats node') = None
+               then Node_id_hashtbl.replace ns.remote_nodes_heart_beats node' false 
+               else () ;
                write_value out_ch (Node ns.local_node) >>= fun () ->                         
                handler ()
              end                  
@@ -1166,10 +1171,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
            write_value out_ch Heartbeat
         )
         (fun e -> 
-           log_msg ns ~exn:e ~level:Error "sending heartbeat" (Format.sprintf "failed for node %s" @@ Node_id.string_of_node node) >>= fun () ->
-           safe_close_channel ns (`Out out_ch) "sending heartbeat" 
-             (Format.sprintf "encountered error while closing output channel for remote node %s after sending heart beat failed" 
-              @@ Node_id.string_of_node node) >>= fun () ->
+           log_msg ns ~exn:e ~level:Error "sending heartbeat" (Format.sprintf "failed for node %s, removing remote node" @@ Node_id.string_of_node node) >>= fun () ->
            return @@ Node_id_hashtbl.remove ns.remote_nodes node                
         ) 
     in
@@ -1186,31 +1188,27 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
          then 
            match (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes node) with
            | None -> ()
-           | Some out_ch -> 
-             begin 
-               Node_id_hashtbl.remove ns.remote_nodes node ; 
-               async 
-                 (fun () ->
-                    safe_close_channel ns (`Out out_ch) "node heartbeat process" 
-                      (Format.sprintf "encountered error while closing output channel for remote node %s after heat beat not received in time" 
-                       @@ Node_id.string_of_node node)                    
-                 ) ;
-               async 
-                 (fun () ->
-                    match ns.node_mon_fn with
-                    | None -> return ()
-                    | Some f ->
-                      catch 
-                        (fun () -> (f node) (ns,make_new_pid ns.local_node ns) >>= fun _ -> return ())
-                        (fun e -> log_msg ns ~exn:e ~level:Error "node heartbeat process" 
-                            (Format.sprintf "encountered error while running node monitor function for remote node %s after heat beat not received in time" 
-                             @@ Node_id.string_of_node node))                    
-                 ) 
-             end 
+           | Some _ ->              
+             Node_id_hashtbl.remove ns.remote_nodes node ;                                
+             async 
+               (fun () ->
+                  log_msg ns ~level:Debug "node heartbeat process" 
+                    (Format.sprintf "failed to receive heartbeat in time from node %s in time, removing remote node" 
+                     @@ Node_id.string_of_node node) >>= fun () ->                    
+                  match ns.node_mon_fn with
+                  | None -> return ()
+                  | Some f ->
+                    catch 
+                      (fun () -> (f node) (ns,make_new_pid ns.local_node ns) >>= fun _ -> return ())
+                      (fun e -> log_msg ns ~exn:e ~level:Error "node heartbeat process" 
+                          (Format.sprintf "encountered error while running node monitor function for remote node %s after heat beat not received in time" 
+                           @@ Node_id.string_of_node node))                    
+               )               
          else ()
       ) 
       ns.remote_nodes_heart_beats ;
-    Node_id_hashtbl.clear ns.remote_nodes_heart_beats ;    
+    Node_id_hashtbl.clear ns.remote_nodes_heart_beats ;
+    Node_id_hashtbl.iter (fun node _ -> Node_id_hashtbl.replace ns.remote_nodes_heart_beats node false) ns.remote_nodes ;    
     process_remote_heart_beats_timeout_fn ns heat_beat_timeout  
 
   let run_node ?process ?node_monitor_fn (node_config : node_config) : unit io =
