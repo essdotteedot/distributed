@@ -137,12 +137,6 @@ A description of the implementation (e.g., the url of the code repository ), for
       with the same exception.<br>
 </div>
 
-<pre><span id="VALignore_result"><span class="keyword">val</span> ignore_result</span> : <code class="type">'a <a href="Distributed.Nonblock_io.html#TYPEt">t</a> -> unit</code></pre><div class="info ">
-<code class="code">ignore_result t</code> is like Pervasives.ignore t except that:
-      if <code class="code">t</code> already failed, it raises the exception now,
-      if <code class="code">t</code> is sleeping and fails later, the exception will be given to ​async_exception_hook.<br>
-</div>
-
 <pre><span id="VALfail"><span class="keyword">val</span> fail</span> : <code class="type">exn -> 'a <a href="Distributed.Nonblock_io.html#TYPEt">t</a></code></pre><div class="info ">
 <code class="code">fail e</code> is a thread that fails with the exception <code class="code">e</code>.<br>
 </div>

@@ -23,15 +23,13 @@ module IO_LWT = struct
 
   let lib_name = "Distributed_lwt"
 
-  let lib_version = "0.4.0"
+  let lib_version = "0.5.0"
 
   let lib_description = "A Lwt based implementation."           
 
   let return = Lwt.return
 
   let (>>=) = Lwt.(>>=)
-
-  let ignore_result = Lwt.ignore_result
 
   let fail = Lwt.fail    
 

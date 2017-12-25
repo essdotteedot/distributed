@@ -15,7 +15,7 @@ Documentation
 -------------
 
 The API documentation is available [here](https://essdotteedot.github.io/distributed/).
-Example programs can be found in the [examples] (examples) directory.
+Example programs can be found in the [examples](examples) directory.
 
 License
 -------

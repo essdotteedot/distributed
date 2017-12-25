@@ -1,5 +1,5 @@
 Name: distributed
-Version: 0.4.0
+Version: 0.5.0
 Synopsis: Library to provide Erlang style distributed computations. This library is inspired by Cloud Haskell.
 Description: 
   Primitive for spawning processes (in the Erlang sense) either remotely or locally, monitoring/unmonitoring spawned processes, sending, 

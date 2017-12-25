@@ -120,8 +120,6 @@ module type Nonblock_io = sig
 
   val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
 
-  val ignore_result : 'a t -> unit
-
   val fail : exn -> 'a t    
 
   val catch : (unit -> 'a t) -> (exn -> 'a t) -> 'a t

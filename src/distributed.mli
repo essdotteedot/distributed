@@ -3,7 +3,7 @@
     {!modtype:Process} provides a monadic interface to describe distributed computations.
 
     @author essdotteedot [<essdotteedot[at]gmail[dot]com>]
-    @version 0.4.0
+    @version 0.5.0
 *)
 
 (** Some nomenclature :
@@ -81,12 +81,6 @@ module type Nonblock_io = sig
       behaves as the application of function [f] to the return value of [t]. If the thread [t] fails, [bind t f] also fails, 
       with the same exception. 
   *)
-
-  val ignore_result : 'a t -> unit
-  (** [ignore_result t] is like Pervasives.ignore t except that:
-      if [t] already failed, it raises the exception now,
-      if [t] is sleeping and fails later, the exception will be given to ​async_exception_hook.
-  *)	
 
   val fail : exn -> 'a t
   (** [fail e] is a thread that fails with the exception [e]. *)
