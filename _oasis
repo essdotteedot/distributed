@@ -34,7 +34,7 @@ Library "distributed-lwt"
   CompiledObject: native
   Path: src    
   Modules: Distributed_lwt
-  BuildDepends: distributed, unix, lwt (>= 2.7.0), lwt.unix, threads
+  BuildDepends: distributed, unix, lwt (>= 3.1.0), lwt.unix, threads
 
 Executable "test_distributed"
   Path: tests
@@ -42,7 +42,7 @@ Executable "test_distributed"
   Build$: flag(tests)
   CompiledObject: native
   Install: false
-  BuildDepends: distributed, unix, lwt (>= 2.7.0), lwt.unix, threads, oUnit (>= 2.0) 
+  BuildDepends: distributed, unix, lwt (>= 3.1.0), lwt.unix, threads, oUnit (>= 2.0) 
 
 Test "test_distributed"
   Run$: flag(tests)
