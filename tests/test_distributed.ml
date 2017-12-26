@@ -9,11 +9,11 @@ let established_connections : (Unix.sockaddr,(Lwt_io.input_channel * Lwt_io.outp
 
 let exit_fn : (unit -> unit Lwt.t) option ref = ref None 
 
-(* let test_logger =
+let test_logger =
    Lwt_log.add_rule "*" Lwt_log.Debug ; 
-   Lwt_log.channel ~template:"$(date).$(milliseconds) : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout ()  *)
+   Lwt_log.channel ~template:"$(date).$(milliseconds) : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout ()
 
-let test_logger = Lwt_log.null    
+(*let test_logger = Lwt_log.null    *)
 
 let get_option (v : 'a option) : 'a = 
   match v with
