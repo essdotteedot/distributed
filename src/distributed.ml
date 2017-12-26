@@ -1265,7 +1265,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             fun () ->
               log_msg ns ~level:Info "node shutting down" (Format.sprintf "start clean up actions for remote mode with configuration of %s" @@ string_of_config node_config) >>= fun () ->
               shutdown_server command_process_server >>= fun () ->
-              Node_id_hashtbl.fold (fun _ out_ch _ -> I.close_output out_ch) ns.remote_nodes (return ()) >>= fun () ->
+              Node_id_hashtbl.fold (fun _ out_ch _ -> safe_close_channel ns (`Out out_ch) "node shutting down" "error while closing remote connection") ns.remote_nodes (return ()) >>= fun () ->
               log_msg ns ~level:Info "node shutting down" (Format.sprintf "finished clean up actions for remote mode with configuration of %s" @@ string_of_config node_config)                                                                                  
           );   
           if process = None
