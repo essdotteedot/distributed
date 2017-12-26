@@ -155,7 +155,7 @@ module M  = struct
 end
 
 let pipe_close p =
-  Lwt.finalize (fun () -> Lwt_io.close p) (fun () -> Lwt.return ())
+  Lwt.catch (fun () -> Lwt_io.close p) (fun _ -> Lwt.return ())
 
 let rec close_pipes = function
   | [] -> Lwt.return ()
