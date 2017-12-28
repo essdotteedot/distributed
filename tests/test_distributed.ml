@@ -2212,8 +2212,8 @@ let lwt_reporter () =
   { Logs.report = report }  
 
 let _ =
-  Logs.Src.set_level log_src (Some Logs.App) ;
+  Logs.Src.set_level log_src (Some Logs.Debug) ;
   Logs.set_reporter @@ lwt_reporter () ;
-  run_test_tt_main suite 				 
+  try run_test_tt_main suite with _ -> (assert_failure @@ "Encountered exception during test run : " ^ Printexc.get_backtrace ())
 
 (*BISECT-IGNORE-END*)
