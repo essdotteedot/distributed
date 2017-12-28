@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: 993612fbc96dc23bcdf921b616f4a629)
+# DO NOT EDIT (digest: 1b7a8731c694659f60b35018b3c79794)
 # Ignore VCS directories, you can use the same kind of rule outside
 # OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
@@ -18,18 +18,21 @@ true: annot, bin_annot
 "src/distributed.cmxs": use_distributed
 # Library distributed-lwt
 "src/distributed-lwt.cmxs": use_distributed-lwt
+<src/*.ml{,i,y}>: package(logs.lwt)
 <src/*.ml{,i,y}>: package(lwt)
 <src/*.ml{,i,y}>: package(lwt.unix)
 <src/*.ml{,i,y}>: package(threads)
 <src/*.ml{,i,y}>: package(unix)
 <src/*.ml{,i,y}>: use_distributed
 # Executable test_distributed
+"tests/test_distributed.native": package(logs.lwt)
 "tests/test_distributed.native": package(lwt)
 "tests/test_distributed.native": package(lwt.unix)
 "tests/test_distributed.native": package(oUnit)
 "tests/test_distributed.native": package(threads)
 "tests/test_distributed.native": package(unix)
 "tests/test_distributed.native": use_distributed
+<tests/*.ml{,i,y}>: package(logs.lwt)
 <tests/*.ml{,i,y}>: package(lwt)
 <tests/*.ml{,i,y}>: package(lwt.unix)
 <tests/*.ml{,i,y}>: package(oUnit)
@@ -37,12 +40,14 @@ true: annot, bin_annot
 <tests/*.ml{,i,y}>: package(unix)
 <tests/*.ml{,i,y}>: use_distributed
 # Executable basic
+"examples/basic_example/basic.native": package(logs.lwt)
 "examples/basic_example/basic.native": package(lwt)
 "examples/basic_example/basic.native": package(lwt.unix)
 "examples/basic_example/basic.native": package(threads)
 "examples/basic_example/basic.native": package(unix)
 "examples/basic_example/basic.native": use_distributed
 "examples/basic_example/basic.native": use_distributed-lwt
+<examples/basic_example/*.ml{,i,y}>: package(logs.lwt)
 <examples/basic_example/*.ml{,i,y}>: package(lwt)
 <examples/basic_example/*.ml{,i,y}>: package(lwt.unix)
 <examples/basic_example/*.ml{,i,y}>: package(threads)
@@ -50,6 +55,7 @@ true: annot, bin_annot
 <examples/basic_example/*.ml{,i,y}>: use_distributed
 <examples/basic_example/*.ml{,i,y}>: use_distributed-lwt
 # Executable ping
+"examples/ping_pong_example/ping.native": package(logs.lwt)
 "examples/ping_pong_example/ping.native": package(lwt)
 "examples/ping_pong_example/ping.native": package(lwt.unix)
 "examples/ping_pong_example/ping.native": package(threads)
@@ -57,12 +63,14 @@ true: annot, bin_annot
 "examples/ping_pong_example/ping.native": use_distributed
 "examples/ping_pong_example/ping.native": use_distributed-lwt
 # Executable pong
+"examples/ping_pong_example/pong.native": package(logs.lwt)
 "examples/ping_pong_example/pong.native": package(lwt)
 "examples/ping_pong_example/pong.native": package(lwt.unix)
 "examples/ping_pong_example/pong.native": package(threads)
 "examples/ping_pong_example/pong.native": package(unix)
 "examples/ping_pong_example/pong.native": use_distributed
 "examples/ping_pong_example/pong.native": use_distributed-lwt
+<examples/ping_pong_example/*.ml{,i,y}>: package(logs.lwt)
 <examples/ping_pong_example/*.ml{,i,y}>: package(lwt)
 <examples/ping_pong_example/*.ml{,i,y}>: package(lwt.unix)
 <examples/ping_pong_example/*.ml{,i,y}>: package(threads)
@@ -70,6 +78,7 @@ true: annot, bin_annot
 <examples/ping_pong_example/*.ml{,i,y}>: use_distributed
 <examples/ping_pong_example/*.ml{,i,y}>: use_distributed-lwt
 # Executable name_server
+"examples/name_server_example/name_server.native": package(logs.lwt)
 "examples/name_server_example/name_server.native": package(lwt)
 "examples/name_server_example/name_server.native": package(lwt.unix)
 "examples/name_server_example/name_server.native": package(threads)
@@ -77,6 +86,7 @@ true: annot, bin_annot
 "examples/name_server_example/name_server.native": use_distributed
 "examples/name_server_example/name_server.native": use_distributed-lwt
 # Executable add_server
+"examples/name_server_example/add_server.native": package(logs.lwt)
 "examples/name_server_example/add_server.native": package(lwt)
 "examples/name_server_example/add_server.native": package(lwt.unix)
 "examples/name_server_example/add_server.native": package(threads)
@@ -84,12 +94,14 @@ true: annot, bin_annot
 "examples/name_server_example/add_server.native": use_distributed
 "examples/name_server_example/add_server.native": use_distributed-lwt
 # Executable add_client
+"examples/name_server_example/add_client.native": package(logs.lwt)
 "examples/name_server_example/add_client.native": package(lwt)
 "examples/name_server_example/add_client.native": package(lwt.unix)
 "examples/name_server_example/add_client.native": package(threads)
 "examples/name_server_example/add_client.native": package(unix)
 "examples/name_server_example/add_client.native": use_distributed
 "examples/name_server_example/add_client.native": use_distributed-lwt
+<examples/name_server_example/*.ml{,i,y}>: package(logs.lwt)
 <examples/name_server_example/*.ml{,i,y}>: package(lwt)
 <examples/name_server_example/*.ml{,i,y}>: package(lwt.unix)
 <examples/name_server_example/*.ml{,i,y}>: package(threads)

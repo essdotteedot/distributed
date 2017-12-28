@@ -21,7 +21,6 @@
 &nbsp;&nbsp;<span class="keyword">type</span>&nbsp;message_type<br>
 &nbsp;&nbsp;<span class="keyword">type</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;matcher<br>
 &nbsp;&nbsp;<span class="keyword">type</span>&nbsp;monitor_ref<br>
-&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;logger<br>
 &nbsp;&nbsp;<span class="keyword">type</span>&nbsp;monitor_reason&nbsp;=<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Normal</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process_id</span>.t<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Exception</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process_id</span>.t&nbsp;*&nbsp;exn<br>
@@ -37,13 +36,9 @@
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;connection_backlog&nbsp;:&nbsp;int;<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;node_name&nbsp;:&nbsp;string;<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;node_ip&nbsp;:&nbsp;string;<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;logger&nbsp;:&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.logger;<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">end</span><br>
-&nbsp;&nbsp;<span class="keyword">module</span>&nbsp;<span class="constructor">Local_config</span>&nbsp;:<br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">sig</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;t&nbsp;=&nbsp;{&nbsp;node_name&nbsp;:&nbsp;string;&nbsp;logger&nbsp;:&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.logger;&nbsp;}<br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">end</span><br>
+&nbsp;&nbsp;<span class="keyword">module</span>&nbsp;<span class="constructor">Local_config</span>&nbsp;:&nbsp;<span class="keyword">sig</span>&nbsp;<span class="keyword">type</span>&nbsp;t&nbsp;=&nbsp;{&nbsp;node_name&nbsp;:&nbsp;string;&nbsp;}&nbsp;<span class="keyword">end</span><br>
 &nbsp;&nbsp;<span class="keyword">type</span>&nbsp;node_config&nbsp;=<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Local</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">Local_config</span>.t<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Remote</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">Remote_config</span>.t<br>

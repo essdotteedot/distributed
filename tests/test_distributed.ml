@@ -9,11 +9,9 @@ let established_connections : (Unix.sockaddr,(Lwt_io.input_channel * Lwt_io.outp
 
 let exit_fn : (unit -> unit Lwt.t) option ref = ref None 
 
-let test_logger =
-   Lwt_log.add_rule "*" Lwt_log.Debug ; 
-   Lwt_log.channel ~template:"$(date).$(milliseconds) : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout ()
+let log_src = Logs.Src.create "distributed" ~doc:"logs events related to the distributed library"
 
-(*let test_logger = Lwt_log.null    *)
+module Log = (val Logs_lwt.src_log log_src : Logs_lwt.LOG)
 
 let get_option (v : 'a option) : 'a = 
   match v with
@@ -47,14 +45,10 @@ module Test_io = struct
 
   type server = unit
 
-  type logger = Lwt_log.logger
-
   type level = Debug 
              | Info
-             | Notice
              | Warning
-             | Error
-             | Fatal
+             | Error             
 
   exception Timeout = Lwt_unix.Timeout
 
@@ -88,25 +82,23 @@ module Test_io = struct
 
   let write_value = Lwt_io.write_value
 
-  let of_lwt_level = function
-    | Debug -> Lwt_log.Debug 
-    | Info -> Lwt_log.Info
-    | Notice -> Lwt_log.Notice
-    | Warning -> Lwt_log.Warning
-    | Error -> Lwt_log.Error
-    | Fatal -> Lwt_log.Fatal
+  let of_logs_lwt_level = function
+    | Debug -> Logs.Debug 
+    | Info -> Logs.Info
+    | Warning -> Logs.Warning
+    | Error -> Logs.Error    
+
+  let log (level:level) (msg_fmtter:unit -> string) =
+    Log.msg (of_logs_lwt_level level) (fun m -> m "%s" @@ msg_fmtter ()) >>= fun _ -> return ()     
 
   let string_of_sock_addr = function
     | Unix.ADDR_UNIX s -> s
-    | Unix.ADDR_INET (inet_addr,port) -> Format.sprintf "%s:%d" (Unix.string_of_inet_addr inet_addr) port  
-
-  let log ?exn ?location ~(logger:logger) ~(level:level) (msg:string) =
-    Lwt_log.log ?exn ?location ~level:(of_lwt_level level) ~logger msg       
+    | Unix.ADDR_INET (inet_addr,port) -> Format.sprintf "%s:%d" (Unix.string_of_inet_addr inet_addr) port       
 
   let open_connection sock_addr =
-    log ~level:Debug (Format.sprintf "opening connection to %s"  (string_of_sock_addr sock_addr)) ~logger:test_logger >>= fun _ ->
-    log ~level:Debug ~logger:test_logger
-      (Format.sprintf "current establised connections : %s" 
+    log Debug (fun () -> Format.sprintf "opening connection to %s"  (string_of_sock_addr sock_addr)) >>= fun _ ->
+    log Debug 
+      (fun () -> Format.sprintf "current establised connections : %s" 
          (
            let keys : Unix.sockaddr list = hashtbl_keys established_connections in
            pp_list ~first:"[" ~last:"]" ~sep:"," keys (fun v -> string_of_sock_addr v)             
@@ -116,23 +108,22 @@ module Test_io = struct
     let new_in_ch0,new_out_ch0 = Lwt_io.pipe () in
     let new_in_ch1,new_out_ch1 = Lwt_io.pipe () in    
     Hashtbl.replace established_connections sock_addr ((new_in_ch1,new_out_ch1)::(new_in_ch0,new_out_ch0)::conns,server_fn) ; 
-    log ~level:Debug (Format.sprintf "opened connection to %s" (string_of_sock_addr sock_addr)) ~logger:test_logger >>= fun _ ->
+    log Debug (fun () -> Format.sprintf "opened connection to %s" (string_of_sock_addr sock_addr)) >>= fun _ ->
     async @@ (fun () -> server_fn sock_addr (new_in_ch0,new_out_ch1)) ;
     return (new_in_ch1,new_out_ch0)
 
   let establish_server ?backlog sock_addr server_fn : server t =     
-    async (fun () -> log ~level:Debug (Format.sprintf "establised connection for %s" (string_of_sock_addr sock_addr)) ~logger:test_logger) ;
+    async (fun () -> log Debug (fun () -> Format.sprintf "establised connection for %s" (string_of_sock_addr sock_addr))) ;
     Hashtbl.replace established_connections sock_addr ([],server_fn) ;
     async (
       fun () -> 
-        log ~level:Debug 
-          (Format.sprintf "current establised connections : %s" 
+        log Debug 
+          (fun () -> Format.sprintf "current establised connections : %s" 
              (
                let keys : Unix.sockaddr list = hashtbl_keys established_connections in
                pp_list ~first:"[" ~last:"]" ~sep:"," keys (fun v -> string_of_sock_addr v) 
              )
-          ) 
-          ~logger:test_logger
+          )           
     ) ;
     return ()
 
@@ -167,7 +158,7 @@ let rec close_pipes = function
 
 let test_return_bind _ =
   let module P = Distributed.Make (Test_io) (M) in      
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let result = ref None in
   let test_proc () = P.(
       return 5 >>= fun i ->
@@ -182,7 +173,7 @@ let test_return_bind _ =
 
 let test_spawn_local_local_config _ =
   let module P = Distributed.Make (Test_io) (M) in
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let result = ref false in
   let mres = ref None in
   let test_proc () = P.(                    
@@ -200,7 +191,6 @@ let test_spawn_local_local_config _ =
 let test_spawn_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
@@ -233,7 +223,6 @@ let test_spawn_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -242,7 +231,6 @@ let test_spawn_remote_remote_config _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -296,7 +284,7 @@ let test_spawn_remote_remote_config _ =
 
 let test_spawn_monitor_local_local_config _ =
   let module P = Distributed.Make (Test_io) (M) in
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let result = ref false in
   let result_monitor = ref None in
   let mres = ref None in
@@ -324,7 +312,6 @@ let test_spawn_monitor_local_local_config _ =
 let test_spawn_monitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
                                P.Remote_config.heart_beat_frequency = 200.0 ;
                                P.Remote_config.heart_beat_timeout = 500.0 ;
@@ -366,7 +353,6 @@ let test_spawn_monitor_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -375,7 +361,6 @@ let test_spawn_monitor_remote_remote_config _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -430,7 +415,7 @@ let test_spawn_monitor_remote_remote_config _ =
 
 let test_monitor_local_local_config _ =
   let module P = Distributed.Make (Test_io) (M) in
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let result = ref false in
   let result_monitor = ref None in  
   let test_proc () = P.(                                        
@@ -455,7 +440,6 @@ let test_monitor_local_local_config _ =
 let test_monitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
@@ -495,7 +479,6 @@ let test_monitor_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -504,7 +487,6 @@ let test_monitor_remote_remote_config _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -556,7 +538,7 @@ let test_monitor_remote_remote_config _ =
 
 let test_unmonitor_local_local_config _ =
   let module P = Distributed.Make (Test_io) (M) in
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let result = ref false in
   let unmon_res = ref None in
   let test_proc () = P.(                                        
@@ -583,7 +565,6 @@ let test_unmonitor_local_local_config _ =
 let test_unmonitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
@@ -625,7 +606,6 @@ let test_unmonitor_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -634,7 +614,6 @@ let test_unmonitor_remote_remote_config _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -688,7 +667,7 @@ let test_unmonitor_remote_remote_config _ =
 
 let test_unmonitor_from_spawn_monitor_local_local_config _ =
   let module P = Distributed.Make (Test_io) (M) in
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let result = ref false in
   let mres = ref None in
   let unmon_res = ref None in
@@ -716,7 +695,6 @@ let test_unmonitor_from_spawn_monitor_local_local_config _ =
 let test_unmonitor_from_spawn_monitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
@@ -759,7 +737,6 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -768,7 +745,6 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -823,7 +799,7 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
 
 let test_get_remote_nodes_local_only _ =
   let module P = Distributed.Make (Test_io) (M) in      
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let num_remote_nodes = ref (-1) in
   let test_proc () = P.(
       get_remote_nodes >>= fun nodes ->
@@ -836,7 +812,6 @@ let test_get_remote_nodes_local_only _ =
 let test_get_remote_nodes_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
@@ -864,7 +839,6 @@ let test_get_remote_nodes_remote_conifg _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -873,7 +847,6 @@ let test_get_remote_nodes_remote_conifg _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -916,7 +889,7 @@ let test_get_remote_nodes_remote_conifg _ =
 
 let test_broadcast_local_only _ =
   let module P = Distributed.Make (Test_io) (M) in  
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let broadcast_received = ref 0 in      
   let loop_back_received = ref None in                         
   let recv_proc () = P.(        
@@ -949,7 +922,6 @@ let test_broadcast_local_only _ =
 let test_broadcast_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
@@ -997,7 +969,6 @@ let test_broadcast_remote_remote _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1006,7 +977,6 @@ let test_broadcast_remote_remote _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1088,7 +1058,7 @@ let test_broadcast_remote_remote _ =
 
 let test_send_local_only _ =
   let module P = Distributed.Make (Test_io) (M) in  
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in  
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in  
   let received_message = ref None in
   let mres = ref None in       
   let send_failed = ref false in                  
@@ -1131,7 +1101,6 @@ let test_send_local_only _ =
 let test_send_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
@@ -1189,7 +1158,6 @@ let test_send_remote_remote _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1198,7 +1166,6 @@ let test_send_remote_remote _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1287,7 +1254,7 @@ let test_send_remote_remote _ =
 
 let test_empty_matchers_local_only _ =
   let module P = Distributed.Make (Test_io) (M) in  
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in  
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in  
   let expected_exception_happened = ref false in        
   let test_proc () = P.(      
       catch 
@@ -1305,7 +1272,6 @@ let test_empty_matchers_local_only _ =
 let test_empty_matchers_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
@@ -1338,7 +1304,6 @@ let test_empty_matchers_remote_remote _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1347,7 +1312,6 @@ let test_empty_matchers_remote_remote _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1395,7 +1359,7 @@ let test_empty_matchers_remote_remote _ =
 
 let test_raise_local_config _ =
   let module P = Distributed.Make (Test_io) (M) in
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let expected_exception_happened = ref false in  
   let test_proc () = P.(                      
       get_self_node >>= fun local_node ->
@@ -1417,7 +1381,6 @@ let test_raise_local_config _ =
 let test_raise_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
                                P.Remote_config.heart_beat_frequency = 200.0 ;
                                P.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1457,7 +1420,6 @@ let test_raise_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1466,7 +1428,6 @@ let test_raise_remote_remote_config _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1523,7 +1484,7 @@ let test_raise_remote_remote_config _ =
 
 let test_monitor_dead_process_local_local_config _ =
   let module P = Distributed.Make (Test_io) (M) in
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let result = ref false in
   let result_monitor = ref None in  
   let test_proc () = P.(                                        
@@ -1549,7 +1510,6 @@ let test_monitor_dead_process_local_local_config _ =
 let test_monitor_dead_process_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
@@ -1590,7 +1550,6 @@ let test_monitor_dead_process_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1599,7 +1558,6 @@ let test_monitor_dead_process_remote_remote_config _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1652,7 +1610,7 @@ let test_monitor_dead_process_remote_remote_config _ =
 
 let test_add_remove_remote_nodes_in_local_config _ =
   let module P = Distributed.Make (Test_io) (M) in
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let add_pass = ref false in
   let remove_pass = ref false in
   let test_proc () = P.(                                        
@@ -1690,7 +1648,6 @@ let test_add_remove_nodes_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1699,7 +1656,6 @@ let test_add_remove_nodes_remote_config _ =
                                       Producer.Remote_config.remote_nodes = [] ; (* start with with no node connections *)
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1789,7 +1745,7 @@ let test_add_remove_nodes_remote_config _ =
 
 let test_selective_receive_local_config _ =
   let module P = Distributed.Make (Test_io) (M) in
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let selective_message = ref None in
   let other_messages_inorder = ref [] in  
   let receiver_proc () = P.(                      
@@ -1830,7 +1786,6 @@ let test_selective_receive_local_config _ =
 let test_selective_receive_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
@@ -1885,7 +1840,6 @@ let test_selective_receive_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1894,7 +1848,6 @@ let test_selective_receive_remote_remote_config _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -1950,7 +1903,7 @@ let test_selective_receive_remote_remote_config _ =
 
 let test_multiple_run_node _ =
   let module P = Distributed.Make (Test_io) (M) in
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let exception_thrown = ref None in
 
   Lwt.(Lwt_main.run (
@@ -1968,7 +1921,7 @@ let test_multiple_run_node _ =
 
 let test_get_remote_node_local_only _ =
   let module P = Distributed.Make (Test_io) (M) in
-  let node_config = P.Local {P.Local_config.node_name = "test" ; P.Local_config.logger = test_logger} in
+  let node_config = P.Local {P.Local_config.node_name = "test" ; } in
   let nonexistent_remote_node_result = ref (Some "") in
   let self_remote_node_result = ref (Some "") in
 
@@ -1989,7 +1942,6 @@ let test_get_remote_node_local_only _ =
 let test_get_remote_node_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.logger = test_logger ;
                                P.Remote_config.local_port = 100 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
@@ -2023,7 +1975,6 @@ let test_get_remote_node_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -2032,7 +1983,6 @@ let test_get_remote_node_remote_remote_config _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
@@ -2097,7 +2047,6 @@ let test_heart_beat _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.logger = test_logger ;
                                       Producer.Remote_config.local_port = 100 ;
                                       Producer.Remote_config.heart_beat_frequency = 0.3 ;
                                       Producer.Remote_config.heart_beat_timeout = 0.12 ;
@@ -2106,7 +2055,6 @@ let test_heart_beat _ =
                                       Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.logger = test_logger ;
                                         Consumer.Remote_config.local_port = 101 ;
                                         Consumer.Remote_config.heart_beat_frequency = 0.1 ;
                                         Consumer.Remote_config.heart_beat_timeout = 0.1 ;
@@ -2244,7 +2192,28 @@ let suite = "Test Distributed" >::: [
     "Test heartbeat"                                                      >:: test_heart_beat
   ]
 
-let _ = 
+(* slightly modified version of reporter defined in Logs_lwt manual : http://erratique.ch/software/logs/doc/Logs_lwt.html#report_ex*)
+let lwt_reporter () =
+  let buf_fmt () =
+    let b = Buffer.create 512 in
+    Format.formatter_of_buffer b, fun () -> let m = Buffer.contents b in Buffer.reset b; m
+  in
+  let app, app_flush = buf_fmt () in
+  let reporter = Logs.format_reporter ~app ~dst:app () in
+  let report src level ~over k msgf =
+    let k' () =
+      let write () = Lwt_io.write Lwt_io.stdout (app_flush ()) in
+      let unblock () = over (); Lwt.return_unit in
+      Lwt.finalize write unblock |> Lwt.ignore_result;
+      k ()
+    in
+    reporter.Logs.report src level ~over:(fun () -> ()) k' msgf;
+  in
+  { Logs.report = report }  
+
+let _ =
+  Logs.Src.set_level log_src (Some Logs.Debug) ;
+  Logs.set_reporter @@ lwt_reporter () ;
   run_test_tt_main suite 				 
 
 (*BISECT-IGNORE-END*)

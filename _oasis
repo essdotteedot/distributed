@@ -34,7 +34,7 @@ Library "distributed-lwt"
   CompiledObject: native
   Path: src    
   Modules: Distributed_lwt
-  BuildDepends: distributed, unix, lwt (>= 3.1.0), lwt.unix, threads
+  BuildDepends: distributed, unix, lwt (>= 3.1.0), lwt.unix, threads, logs.lwt
 
 Executable "test_distributed"
   Path: tests
@@ -42,7 +42,7 @@ Executable "test_distributed"
   Build$: flag(tests)
   CompiledObject: native
   Install: false
-  BuildDepends: distributed, unix, lwt (>= 3.1.0), lwt.unix, threads, oUnit (>= 2.0) 
+  BuildDepends: distributed, unix, lwt (>= 3.1.0), lwt.unix, threads, oUnit (>= 2.0), logs.lwt 
 
 Test "test_distributed"
   Run$: flag(tests)
@@ -58,42 +58,42 @@ Executable "basic"
   MainIs: basic.ml
   Build$: flag(examples) && flag(lwt)
   CompiledObject: native
-  BuildDepends: distributed.lwt
+  BuildDepends: distributed.lwt, logs.lwt
 
 Executable "ping"
   Path: examples/ping_pong_example
   MainIs: ping.ml
   Build$: flag(examples) && flag(lwt)
   CompiledObject: native
-  BuildDepends: distributed.lwt
+  BuildDepends: distributed.lwt, logs.lwt
 
 Executable "pong"
   Path: examples/ping_pong_example
   MainIs: pong.ml
   Build$: flag(examples) && flag(lwt)
   CompiledObject: native
-  BuildDepends: distributed.lwt  
+  BuildDepends: distributed.lwt, logs.lwt  
 
 Executable "name_server"
   Path: examples/name_server_example
   MainIs: name_server.ml
   Build$: flag(examples) && flag(lwt)
   CompiledObject: native
-  BuildDepends: distributed.lwt
+  BuildDepends: distributed.lwt, logs.lwt
 
 Executable "add_server"
   Path: examples/name_server_example
   MainIs: add_server.ml
   Build$: flag(examples) && flag(lwt)
   CompiledObject: native
-  BuildDepends: distributed.lwt
+  BuildDepends: distributed.lwt, logs.lwt
 
 Executable "add_client"
   Path: examples/name_server_example
   MainIs: add_client.ml
   Build$: flag(examples) && flag(lwt)
   CompiledObject: native
-  BuildDepends: distributed.lwt              
+  BuildDepends: distributed.lwt, logs.lwt              
 
 AlphaFeatures: ocamlbuild_more_args
 Document "distributed-api"

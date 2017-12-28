@@ -1,27 +1,22 @@
 (* The add server holds the add process which will add two ints and
    send back the result to the requester. The goal is to make then
-   server reslient to failures in the name_server.Arg
+   server resilient to failures in the name_server.Arg
 
    main_proc
     - attempt to add the name server node, repeat until successful
     - spawn and monitor process_add_request, if process_add_request fails then
-      the name server is added again an process_add_request is respawned
+      the name server is added again an process_add_request is re-spawned
 
    process_add_request
     - attempt to register with the name server, if don't get okay in 0.5 raise
-      Failed_to_register at whic point main_proc which is monitoring will restart
+      Failed_to_register at which point main_proc which is monitoring will restart
     - after successful registration enter a receive loop to process add messages
 *)
-module D = Distributed_lwt.Make(Message)
+module D = Distributed_lwt.Make (Message) (Custom_logger)
 
 exception Failed_to_register 
 
-let logger =
-  Lwt_log.add_rule "*" Lwt_log.Fatal ; 
-  Lwt_log.channel ~template:"$(date).$(milliseconds) {$(level)} : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout () 
-
 let config = D.Remote { D.Remote_config.node_name = "add_server" ; 
-                        D.Remote_config.logger = logger ;   
                         D.Remote_config.local_port = 46000 ;
                         D.Remote_config.heart_beat_frequency = 5.0 ;
                         D.Remote_config.heart_beat_timeout = 10.0 ;
@@ -83,5 +78,7 @@ let rec main_proc () = D.(
   )  
 
 let () =
+  Logs.Src.set_level Custom_logger.log_src (Some Logs.App) ;
+  Logs.set_reporter @@ Custom_logger.lwt_reporter () ;
   Lwt_main.run (D.run_node ~process:(D.(fun () -> main_proc () >>= fun _ -> return ())) config)
 

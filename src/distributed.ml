@@ -99,14 +99,10 @@ module type Nonblock_io = sig
 
   type server
 
-  type logger
-
   type level = Debug 
              | Info
-             | Notice
              | Warning
-             | Error
-             | Fatal
+             | Error             
 
   exception Timeout
 
@@ -146,7 +142,7 @@ module type Nonblock_io = sig
 
   val shutdown_server : server -> unit t  
 
-  val log : ?exn:exn -> ?location:string * int * int -> logger:logger -> level:level -> string -> unit t 
+  val log : level -> (unit -> string) -> unit t
 
   val sleep : float -> unit t     
 
@@ -184,8 +180,6 @@ module type Process = sig
 
   type monitor_ref
 
-  type logger
-
   type monitor_reason = Normal of Process_id.t                  
                       | Exception of Process_id.t * exn         
                       | UnkownNodeId of Process_id.t * Node_id.t 
@@ -198,14 +192,12 @@ module type Process = sig
                heart_beat_frequency : float                        ;
                connection_backlog   : int                          ;  
                node_name            : string                       ;
-               node_ip              : string                       ;
-               logger               : logger                       ;
+               node_ip              : string                       ;               
              }    
   end                 
 
   module Local_config : sig
-    type t = { node_name          : string ;
-               logger             : logger ;
+    type t = { node_name          : string ;               
              }
   end
 
@@ -258,7 +250,7 @@ module type Process = sig
 
 end
 
-module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_type = M.t and type 'a io = 'a I.t and type logger = I.logger) = struct    
+module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_type = M.t and type 'a io = 'a I.t) = struct    
   exception Init_more_than_once    
 
   exception Empty_matchers
@@ -273,8 +265,6 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
   type monitor_ref = Monitor_Ref of int * Process_id.t * Process_id.t  (* unique id, the process doing the monitoring and the process being monitored *)
 
-  type logger = I.logger
-
   type monitor_reason = Normal of Process_id.t                  
                       | Exception of Process_id.t * exn         
                       | UnkownNodeId of Process_id.t * Node_id.t 
@@ -287,14 +277,12 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                heart_beat_frequency : float                        ;
                connection_backlog   : int                          ;  
                node_name            : string                       ;
-               node_ip              : string                       ;
-               logger               : logger                       ;
+               node_ip              : string                       ;               
              }    
   end                 
 
   module Local_config = struct
-    type t = { node_name          : string ;
-               logger             : logger ;
+    type t = { node_name          : string ;               
              }
   end
 
@@ -329,7 +317,6 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                      remote_nodes_heart_beats : bool Node_id_hashtbl.t ;
                      monitor_table            : Monitor_ref_set.t Process_id_hashtbl.t ;
                      local_node               : Node_id.t ;
-                     logger                   : I.logger ;
                      monitor_ref_id           : int ref ;
                      config                   : Remote_config.t option ref ;
                      node_mon_fn              : (Node_id.t -> unit t) option
@@ -341,7 +328,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
   let initalised = ref false    
 
-  let dist_lib_version = "0.4.0"       
+  let dist_lib_version = "0.5.0"       
 
   let string_of_termination_reason (reason : monitor_reason) : string =
     match reason with
@@ -416,17 +403,23 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         remote_nodes r.Remote_config.local_port r.Remote_config.heart_beat_timeout r.Remote_config.heart_beat_frequency 
         r.Remote_config.connection_backlog r.Remote_config.node_name r.Remote_config.node_ip
 
-  let log_msg (ns : node_state) ~(level:I.level) ?exn (action : string) ?pid (details : string) : unit I.t =      
-    let msg = 
-      if pid = None then Format.sprintf "Node {%s} - Action {%s} Details {%s}" (Node_id.string_of_node ns.local_node) action details 
-      else 
-        Format.sprintf "Node {%s}|Process {%d} - Action {%s} Details {%s}" 
-          (Node_id.string_of_node ns.local_node) (Potpourri.get_option pid) action details 
+  let log_msg (ns : node_state) (level:I.level) ?exn (action : string) ?pid (details : unit -> string) : unit I.t =
+    let time_str () =
+      let time_float = Unix.gettimeofday () in
+      let time_record = Unix.gmtime time_float in
+      Format.sprintf "[%d-%02d-%02d-%02d:%02d:%02d:%03.0f]" (1900 + time_record.Unix.tm_year) (1 + time_record.Unix.tm_mon) time_record.Unix.tm_mday time_record.Unix.tm_hour time_record.Unix.tm_min time_record.Unix.tm_sec (mod_float (time_float *. 1000.) 1000.)
     in
-    I.log ~logger:(ns.logger) ~level ?exn msg
+    let log_msg' () =
+      match pid, exn with
+      | None, None -> I.log level (fun () -> Format.sprintf "%s [Node : %s] [Action : %s] [Details : %s]" (time_str ()) (Node_id.string_of_node ns.local_node) action (details ()))
+      | None, Some exn' -> I.log level (fun () -> Format.sprintf "%s [Node : %s] [Action : %s] [Details : %s] [Exception : %s]" (time_str ()) (Node_id.string_of_node ns.local_node) action (details ()) (Printexc.to_string exn'))
+      | Some pid', None -> I.log level (fun () -> Format.sprintf "%s [Node : %s|Process : %d] [Action : %s] [Details : %s]" (time_str ()) (Node_id.string_of_node ns.local_node) pid' action (details ()))
+      | Some pid', Some exn' -> I.log level (fun () -> Format.sprintf "%s [Node : %s|Process : %d] [Action : %s] [Details : %s] [Exception : %s]" (time_str ()) (Node_id.string_of_node ns.local_node) pid' action (details ()) (Printexc.to_string exn'))    
+    in
+    I.catch log_msg' (fun _ -> I.return ()) (* if we get an error while logging then can't really do anything *)
 
   let safe_close_channel (ns : node_state) (ch : [`Out of I.output_channel | `In of I.input_channel]) 
-      (action : string) (details : string) : unit I.t =
+      (action : string) (details : unit -> string) : unit I.t =
     let open I in
     catch 
       (fun () -> 
@@ -434,7 +427,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
          | `Out out_ch -> close_output out_ch
          | `In in_ch -> close_input in_ch
       )  
-      (fun e -> log_msg ns ~level:Warning ~exn:e action details)                      
+      (fun e -> log_msg ns Warning ~exn:e action details)
 
   let return (v : 'a) : 'a t = 
     fun (ns,pid) -> I.return (ns,pid, v)
@@ -465,18 +458,18 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         (fun () ->
            match (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes (Process_id.get_node monitoring_process)) with
            | None -> 
-             log_msg ns ~level:Info "sending remote monitor notification" 
-               (Format.sprintf "monitor reference %s, remote node %s is down, skipping sending monitor message" 
+             log_msg ns Info "sending remote monitor notification" 
+               (fun () -> Format.sprintf "monitor reference %s, remote node %s is down, skipping sending monitor message" 
                   (string_of_monitor_ref mref) (Node_id.string_of_node (Process_id.get_node monitoring_process)))
            | Some out_ch -> 
              write_value out_ch (Exit (monitored_process, termination_reason)) >>= fun () ->
-             log_msg ns ~level:Info "sending remote monitor notification" 
-               (Format.sprintf "sent monitor notification for monitor ref %s to remote node %s" 
+             log_msg ns Info "sending remote monitor notification" 
+               (fun () -> Format.sprintf "sent monitor notification for monitor ref %s to remote node %s" 
                   (string_of_monitor_ref mref) (Node_id.string_of_node @@ Process_id.get_node monitoring_process))
         )
         (fun e -> 
-           log_msg ns ~exn:e ~level:Error "sending remote monitor notification" 
-             (Format.sprintf "monitor reference %s, error sending monitor message to remote node %s, removing node" 
+           log_msg ns ~exn:e Error "sending remote monitor notification" 
+             (fun () -> Format.sprintf "monitor reference %s, error sending monitor message to remote node %s, removing node" 
                 (string_of_monitor_ref mref) (Node_id.string_of_node @@ Process_id.get_node monitoring_process)) >>= fun () ->
            return @@ Node_id_hashtbl.remove ns.remote_nodes (Process_id.get_node monitoring_process)
         ) in           
@@ -485,13 +478,13 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       if Process_id.is_local pid ns.local_node
       then
         send_monitor_response_local mref >>= fun () ->
-        log_msg ns ~level:Debug "sent local monitor notification" (string_of_monitor_notification mref termination_reason)                     
+        log_msg ns Debug "sent local monitor notification" (fun () -> string_of_monitor_notification mref termination_reason)                     
       else
-        log_msg ns ~level:Debug "start sending remote monitor notification" 
-          (Format.sprintf "monitor reference : %s" (string_of_monitor_notification mref termination_reason)) >>= fun () ->
+        log_msg ns Debug "start sending remote monitor notification" 
+          (fun () -> Format.sprintf "monitor reference : %s" (string_of_monitor_notification mref termination_reason)) >>= fun () ->
         send_monitor_response_remote mref >>= fun () ->
-        log_msg ns ~level:Debug "finished sending remote monitor notification" 
-          (Format.sprintf "monitor reference : %s" (string_of_monitor_notification mref termination_reason)) in
+        log_msg ns Debug "finished sending remote monitor notification" 
+          (fun () -> Format.sprintf "monitor reference : %s" (string_of_monitor_notification mref termination_reason)) in
 
     match monitors with
     | None -> return ()
@@ -501,15 +494,15 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     let open I in
     catch 
       (fun () ->
-         log_msg ns ~level:Notice "starting process" (Process_id.string_of_pid pid) >>= fun () ->
+         log_msg ns Debug "starting process" (fun () -> Process_id.string_of_pid pid) >>= fun () ->
          p (ns,pid) >>= fun _ ->
-         log_msg ns ~level:Notice "process terminated successfully" (Process_id.string_of_pid pid) >>= fun () ->
+         log_msg ns Debug "process terminated successfully" (fun () -> Process_id.string_of_pid pid) >>= fun () ->
          send_monitor_response ns ((Potpourri.of_option @@ fun () -> Process_id_hashtbl.find ns.monitor_table pid)) (Normal pid) >>= fun () ->
          Process_id_hashtbl.remove ns.monitor_table pid ;
          return @@ Hashtbl.remove ns.mailboxes (Process_id.get_id pid) ;                       
       )         
       (fun e -> 
-         log_msg ns ~exn:e ~level:Error "process failed with error" (Process_id.string_of_pid pid) >>= fun () ->
+         log_msg ns ~exn:e Error "process failed with error" (fun () -> Process_id.string_of_pid pid) >>= fun () ->
          Hashtbl.remove ns.mailboxes (Process_id.get_id pid) ;
          begin
            match e with
@@ -535,13 +528,13 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     let new_mailbox,push_fn = I.create_stream () in 
     Hashtbl.replace ns.mailboxes (Process_id.get_id new_pid) (new_mailbox,push_fn) ;
     let msg_to_send = msg_create_fn new_pid in
-    log_msg ns ~pid ~level:Notice "sync send start" 
-      (Format.sprintf "created new process %s for sync send of %s" (Process_id.string_of_pid new_pid) (string_of_message msg_to_send)) >>= fun () -> 
+    log_msg ns ~pid Debug "sync send start" 
+      (fun () -> Format.sprintf "created new process %s for sync send of %s" (Process_id.string_of_pid new_pid) (string_of_message msg_to_send)) >>= fun () -> 
     write_value out_ch ?flags msg_to_send >>= fun () ->      
     get new_mailbox >>= fun result_pid ->      
     Hashtbl.remove ns.mailboxes (Process_id.get_id new_pid) ;
-    log_msg ns ~pid ~level:Notice "sync send end" 
-      (Format.sprintf "process %s finished for sync send of %s" (Process_id.string_of_pid new_pid) (string_of_message msg_to_send)) >>= fun () ->
+    log_msg ns ~pid Debug "sync send end" 
+      (fun () -> Format.sprintf "process %s finished for sync send of %s" (Process_id.string_of_pid new_pid) (string_of_message msg_to_send)) >>= fun () ->
     response_fn (Potpourri.get_option result_pid) (* we do not send None on mailboxes *)
 
   let monitor_helper (ns : node_state) (monitor_pid : Process_id.t) (monitee_pid : Process_id.t) : (message option * monitor_ref) =
@@ -592,15 +585,15 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
           begin
             let monitor_res = monitor_local ns pid new_pid in
             async (fun () -> run_process' ns new_pid (p ())) ;           
-            log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawned and monitored local process" 
-              ((Format.sprintf "result pid %s, result monitor reference : %s") (Process_id.string_of_pid new_pid) (string_of_monitor_ref monitor_res)) >>= fun () -> 
+            log_msg ~pid:(Process_id.get_id pid) ns Debug "spawned and monitored local process" 
+              (fun () -> (Format.sprintf "result pid %s, result monitor reference : %s") (Process_id.string_of_pid new_pid) (string_of_monitor_ref monitor_res)) >>= fun () -> 
             return (ns,pid,(new_pid, Some monitor_res))
           end
         else 
           begin 
             async (fun () -> run_process' ns new_pid (p ())) ;           
-            log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawned local process" 
-              (Format.sprintf "result pid %s" (Process_id.string_of_pid new_pid)) >>= fun () ->
+            log_msg ~pid:(Process_id.get_id pid) ns Debug "spawned local process" 
+              (fun () -> Format.sprintf "result pid %s" (Process_id.string_of_pid new_pid)) >>= fun () ->
             return (ns,pid,(new_pid, None))
           end            
       else
@@ -609,36 +602,36 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
           if monitor
           then 
             begin
-              log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawning and monitoring remote process" 
-                (Format.sprintf "on remote node %s, local process %s" (Node_id.string_of_node node_id) (Process_id.string_of_pid pid)) >>= fun () ->
+              log_msg ~pid:(Process_id.get_id pid) ns Debug "spawning and monitoring remote process" 
+                (fun () -> Format.sprintf "on remote node %s, local process %s" (Node_id.string_of_node node_id) (Process_id.string_of_pid pid)) >>= fun () ->
               sync_send (Process_id.get_id pid) ns ~flags:[Marshal.Closures] out_ch (fun receiver_pid -> (Spawn_monitor (p (),pid,receiver_pid))) 
                 (fun res ->
                    let Monitor_Ref (_,_,monitored_proc) as mref = match res with Spawn_monitor_result (_,mr,_) -> mr 
                                                                                | _ -> assert false in (*BISECT-IGNORE*)
-                   log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawned and monitored remote process" 
-                     (Format.sprintf "spawned on remote node %s : result pid %s, result monitor reference : %s" 
+                   log_msg ~pid:(Process_id.get_id pid) ns Debug "spawned and monitored remote process" 
+                     (fun () -> Format.sprintf "spawned on remote node %s : result pid %s, result monitor reference : %s" 
                         (Node_id.string_of_node node_id) (Process_id.string_of_pid monitored_proc) (string_of_monitor_ref mref)) >>= fun () ->
                    return (ns,pid, (monitored_proc, Some mref))
                 )
             end
           else 
             begin
-              log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawning remote process" 
-                (Format.sprintf "on remote node %s, local process %s" (Node_id.string_of_node node_id) (Process_id.string_of_pid pid)) >>= fun () ->
+              log_msg ~pid:(Process_id.get_id pid) ns Debug "spawning remote process" 
+                (fun () -> Format.sprintf "on remote node %s, local process %s" (Node_id.string_of_node node_id) (Process_id.string_of_pid pid)) >>= fun () ->
               sync_send (Process_id.get_id pid) ns ~flags:[Marshal.Closures] out_ch (fun receiver_pid -> (Proc (p (),receiver_pid))) 
                 (fun res ->
                    let remote_proc_pid = match res with Proc_result (r,_) -> r 
                                                       | _ -> assert false in (*BISECT-IGNORE*)
-                   log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "spawned remote process" 
-                     (Format.sprintf "on remote node %s : result pid %s" 
+                   log_msg ~pid:(Process_id.get_id pid) ns Debug "spawned remote process" 
+                     (fun () -> Format.sprintf "on remote node %s : result pid %s" 
                         (Node_id.string_of_node node_id) (Process_id.string_of_pid remote_proc_pid)) >>= fun () -> 
                    return (ns, pid, (remote_proc_pid, None))
                 )                  
             end                                   
         | None -> 
           begin
-            log_msg ~pid:(Process_id.get_id pid) ns ~level:Error "failed to spawn process on remote node" 
-              (Format.sprintf "remote node %s, is unknown, local process %s " (Node_id.string_of_node node_id) (Process_id.string_of_pid pid)) >>= fun () ->
+            log_msg ~pid:(Process_id.get_id pid) ns Error "failed to spawn process on remote node" 
+              (fun () -> Format.sprintf "remote node %s, is unknown, local process %s " (Node_id.string_of_node node_id) (Process_id.string_of_pid pid)) >>= fun () ->
             fail @@ InvalidNode node_id              
           end 
 
@@ -695,8 +688,8 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       if matchers = []
       then 
         begin
-          log_msg ~pid:(Process_id.get_id pid) ns ~level:Error "receiving" 
-            (Format.sprintf "receiver process %s, called with empty list of matchers" (Process_id.string_of_pid pid)) >>= fun () ->            
+          log_msg ~pid:(Process_id.get_id pid) ns Error "receiving" 
+            (fun () -> Format.sprintf "receiver process %s, called with empty list of matchers" (Process_id.string_of_pid pid)) >>= fun () ->            
           fail Empty_matchers
         end
       else
@@ -704,27 +697,27 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         | None -> 
           catch 
             (fun () ->
-               log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "receiving with no time out" 
-                 (Format.sprintf "receiver process %s" (Process_id.string_of_pid pid)) >>= fun () ->              
+               log_msg ~pid:(Process_id.get_id pid) ns Debug "receiving with no time out" 
+                 (fun () -> Format.sprintf "receiver process %s" (Process_id.string_of_pid pid)) >>= fun () ->              
                do_receive_blocking (ns,pid) >>= fun (ns',pid',res) ->
-               log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "successfully received and processed message with no time out" 
-                 (Format.sprintf "receiver process %s" (Process_id.string_of_pid pid)) >>= fun () ->
+               log_msg ~pid:(Process_id.get_id pid) ns Debug "successfully received and processed message with no time out" 
+                 (fun () -> Format.sprintf "receiver process %s" (Process_id.string_of_pid pid)) >>= fun () ->
                return (ns',pid',res)
             )
             (fun e ->
                if not !mailbox_cleaned_up then restore_mailbox ns pid else ();
-               log_msg ~pid:(Process_id.get_id pid) ns ~exn:e ~level:Error "receiving with no time out failed" 
-                 (Format.sprintf "receiver process %s, encountred exception" (Process_id.string_of_pid pid)) >>= fun () ->
+               log_msg ~pid:(Process_id.get_id pid) ns ~exn:e Error "receiving with no time out failed" 
+                 (fun () -> Format.sprintf "receiver process %s, encountred exception" (Process_id.string_of_pid pid)) >>= fun () ->
                fail e
             )          
         | Some timeout_duration' ->
-          log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "receiving with time out" 
-            (Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->            
+          log_msg ~pid:(Process_id.get_id pid) ns Debug "receiving with time out" 
+            (fun () -> Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->            
           catch 
             (fun () -> 
                pick [do_receive_blocking (ns,pid) ; timeout timeout_duration' ] >>= fun (ns',pid',res) ->
-               log_msg ns ~pid:(Process_id.get_id pid) ~level:Debug "successfully received and processed a message with time out" 
-                 (Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->
+               log_msg ns ~pid:(Process_id.get_id pid) Debug "successfully received and processed a message with time out" 
+                 (fun () -> Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->
                return (ns', pid', res)
             )
             (fun e ->
@@ -732,13 +725,13 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                match e with 
                | Timeout -> 
                  begin
-                   log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "receive timed out" 
-                     (Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->
+                   log_msg ~pid:(Process_id.get_id pid) ns Debug "receive timed out" 
+                     (fun () -> Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->
                    return (ns,pid, None)
                  end
                | e ->
-                 log_msg ~pid:(Process_id.get_id pid) ns ~exn:e ~level:Error "receiving with time out failed" 
-                   (Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->
+                 log_msg ~pid:(Process_id.get_id pid) ns ~exn:e Error "receiving with time out failed" 
+                   (fun () -> Format.sprintf "receiver process %s, time out %f" (Process_id.string_of_pid pid) timeout_duration') >>= fun () ->
                  fail e
             ) 
 
@@ -756,11 +749,11 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     let open I in
     match (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes node) with
     | Some remote_output ->   
-      log_msg ns ~pid ~level:Debug sending_log_action sending_log_msg >>= fun () ->        
+      log_msg ns ~pid Debug sending_log_action (fun () -> sending_log_msg) >>= fun () ->        
       write_value ~flags:[Marshal.Closures] remote_output msg (* marshal because the message could be a function *)
     | None -> 
       begin
-        log_msg ns ~pid ~level:Error sending_log_action unknown_node_msg >>= fun () ->
+        log_msg ns ~pid Error sending_log_action (fun () -> unknown_node_msg) >>= fun () ->
         fail @@ InvalidNode node
       end            
 
@@ -771,13 +764,13 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       then
         match (Potpourri.of_option @@ fun () -> Hashtbl.find ns.mailboxes (Process_id.get_id remote_pid)) with
         | None ->
-          log_msg ns ~pid:(Process_id.get_id pid) ~level:I.Warning "unable to send message to local process" 
-            (Format.sprintf "message : %s, to unknown local process: %s, from local process: %s" 
+          log_msg ns ~pid:(Process_id.get_id pid) I.Warning "unable to send message to local process" 
+            (fun () -> Format.sprintf "message : %s, to unknown local process: %s, from local process: %s" 
                (M.string_of_message msg) (Process_id.string_of_pid remote_pid) (Process_id.string_of_pid pid)) >>= fun () ->
           return (ns, pid, ())
         | Some (_,push_fn) ->
-          log_msg ns ~pid:(Process_id.get_id pid) ~level:I.Debug "successfully sent message to local process" 
-            (Format.sprintf "message : %s, to local process: %s, from local process: %s" 
+          log_msg ns ~pid:(Process_id.get_id pid) I.Debug "successfully sent message to local process" 
+            (fun () -> Format.sprintf "message : %s, to local process: %s, from local process: %s" 
                (M.string_of_message msg) (Process_id.string_of_pid remote_pid) (Process_id.string_of_pid pid)) >>= fun () ->
           return @@ (ns, pid, push_fn @@ Some (Data (pid,remote_pid,msg)))
       else          
@@ -788,8 +781,8 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         send_to_remote_node_helper 
           (Process_id.get_id pid) ns (Process_id.get_node remote_pid) 
           "sending message to remote process" sending_msg unknown_node_msg (Data (pid,remote_pid,msg)) >>= fun () ->          
-        log_msg ns ~pid:(Process_id.get_id pid) ~level:I.Debug "successfully sent message to remote process" 
-          (Format.sprintf "message : %s, to remote process: %s, from local process: %s" 
+        log_msg ns ~pid:(Process_id.get_id pid) I.Debug "successfully sent message to remote process" 
+          (fun () -> Format.sprintf "message : %s, to remote process: %s, from local process: %s" 
              (M.string_of_message msg) (Process_id.string_of_pid remote_pid) (Process_id.string_of_pid pid)) >>= fun () ->
         return (ns,pid,()) 
 
@@ -804,8 +797,8 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
          if recev_pid' = sending_pid
          then return ()
          else
-           log_msg ?pid ns ~level:I.Debug "broadcast" 
-             (Format.sprintf "sending message %s to local process %s from process %s as result of broadcast request" 
+           log_msg ?pid ns I.Debug "broadcast" 
+             (fun () -> Format.sprintf "sending message %s to local process %s from process %s as result of broadcast request" 
                 (M.string_of_message m) (Process_id.string_of_pid recev_pid') (Process_id.string_of_pid sending_pid)) >>= fun () ->             
            return @@ push_fn @@ Some (Data (sending_pid,recev_pid',m))
       ) 
@@ -818,8 +811,8 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       if Node_id.is_local node ns.local_node
       then
         begin
-          log_msg ~pid:(Process_id.get_id pid) ns ~level:I.Debug "broadcast" 
-            (Format.sprintf "sending broadcast message %s to local processes running on local node %s from local process %s" 
+          log_msg ~pid:(Process_id.get_id pid) ns I.Debug "broadcast" 
+            (fun () -> Format.sprintf "sending broadcast message %s to local processes running on local node %s from local process %s" 
                (M.string_of_message m) (Node_id.string_of_node node) (Process_id.string_of_pid pid)) >>= fun () ->
           broadcast_local ns pid m >>= fun () ->
           return (ns,pid,())
@@ -831,8 +824,8 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             (Process_id.string_of_pid pid) (M.string_of_message m) (Node_id.string_of_node node) in
         send_to_remote_node_helper 
           (Process_id.get_id pid) ns node "broadcasting to remote node" sending_msg unknwon_node_msg (Broadcast (pid,node,m)) >>= fun () ->
-        log_msg ns ~pid:(Process_id.get_id pid) ~level:I.Debug "successfully sent broadcast message to remote node" 
-          (Format.sprintf "message : %s, to remote node: %s" (M.string_of_message m) (Node_id.string_of_node node))  >>= fun () ->
+        log_msg ns ~pid:(Process_id.get_id pid) I.Debug "successfully sent broadcast message to remote node" 
+          (fun () -> Format.sprintf "message : %s, to remote node: %s" (M.string_of_message m) (Node_id.string_of_node node))  >>= fun () ->
         return (ns,pid,())
 
   let lookup_node_and_send (pid:int) (ns : node_state) (receiver_process : Process_id.t) (action : string) (unknown_node_msg : string) (node_found_fn : I.output_channel -> 'a I.t) : 'a I.t =
@@ -840,7 +833,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     match (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes (Process_id.get_node @@ receiver_process)) with
     | None -> 
       begin
-        log_msg ~pid ns ~level:Error action unknown_node_msg >>= fun () ->
+        log_msg ~pid ns Error action (fun () -> unknown_node_msg) >>= fun () ->
         fail @@ InvalidNode (Process_id.get_node receiver_process)
       end 
     | Some out_ch ->
@@ -852,15 +845,15 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       if Process_id.is_local pid_to_monitor ns.local_node
       then
         begin
-          log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "monitored" 
-            (Format.sprintf "Creating monitor for local process %s to be monitored by local process %s" 
+          log_msg ~pid:(Process_id.get_id pid) ns Debug "monitored" 
+            (fun () -> Format.sprintf "Creating monitor for local process %s to be monitored by local process %s" 
                (Process_id.string_of_pid pid_to_monitor) (Process_id.string_of_pid pid)) >>= fun () ->
           return (ns,pid, monitor_local ns pid pid_to_monitor)
         end
       else
         begin
-          log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "monitoring" 
-            (Format.sprintf "Creating monitor for remote process %s to be monitored by local process %s" 
+          log_msg ~pid:(Process_id.get_id pid) ns Debug "monitoring" 
+            (fun () -> Format.sprintf "Creating monitor for remote process %s to be monitored by local process %s" 
                (Process_id.string_of_pid pid_to_monitor) (Process_id.string_of_pid pid)) >>= fun () ->
           let unknown_mode_msg = Format.sprintf "Process %s failed to monitor remote process %s on remote node %s, remote node is unknown" 
               (Process_id.string_of_pid pid) (Process_id.string_of_pid pid_to_monitor) (Node_id.string_of_node @@ Process_id.get_node pid_to_monitor) in
@@ -869,8 +862,8 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
               (fun res ->
                  let res' = match res with Monitor_result (mon_msg,mon_res,_) -> (mon_msg,mon_res) 
                                          | _ -> assert false in (*BISECT-IGNORE*)
-                 log_msg ~pid:(Process_id.get_id pid) ns ~level:I.Debug "successfully monitored remote process" 
-                   (Format.sprintf "result: %s" (string_of_message res)) >>= fun () -> 
+                 log_msg ~pid:(Process_id.get_id pid) ns I.Debug "successfully monitored remote process" 
+                   (fun () -> Format.sprintf "result: %s" (string_of_message res)) >>= fun () -> 
                  return (ns, pid, monitor_response_handler ns res')
               ) in
           lookup_node_and_send (Process_id.get_id pid) ns pid_to_monitor "monitoring" unknown_mode_msg node_found_fn    
@@ -891,19 +884,19 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       if Process_id.is_local process_to_unmonitor ns.local_node
       then
         begin
-          log_msg ns ~pid:(Process_id.get_id pid) ~level:Debug "unmonitored" (Format.sprintf "Unmonitor local : %s" @@ string_of_monitor_ref mref) >>= fun () -> 
+          log_msg ns ~pid:(Process_id.get_id pid) Debug "unmonitored" (fun () -> Format.sprintf "Unmonitor local : %s" @@ string_of_monitor_ref mref) >>= fun () -> 
           return (ns, pid, unmonitor_local ns mref)
         end          
       else
         begin
-          log_msg ns ~pid:(Process_id.get_id pid) ~level:Debug "unmonitoring" (Format.sprintf "Unmonitor remote : %s" @@ string_of_monitor_ref mref) >>= fun () -> 
+          log_msg ns ~pid:(Process_id.get_id pid) Debug "unmonitoring" (fun () -> Format.sprintf "Unmonitor remote : %s" @@ string_of_monitor_ref mref) >>= fun () -> 
           let unknown_node_msg = Format.sprintf "Process %s failed to monitor remote process %s on remote node %s, remote node is unknown" 
               (Process_id.string_of_pid pid) (Process_id.string_of_pid process_to_unmonitor) (Node_id.string_of_node @@ Process_id.get_node process_to_unmonitor) in
           let node_found_fn out_ch = 
             sync_send (Process_id.get_id pid) ns out_ch 
               (fun recv_pid -> (Unmonitor (mref,recv_pid))) 
               (fun _ -> 
-                 log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "successfully unmonitored" (Format.sprintf "monitor ref : %s" @@ string_of_monitor_ref mref) >>= fun () ->  
+                 log_msg ~pid:(Process_id.get_id pid) ns Debug "successfully unmonitored" (fun () -> Format.sprintf "monitor ref : %s" @@ string_of_monitor_ref mref) >>= fun () ->  
                  return (ns, pid, ())
               ) in
           lookup_node_and_send (Process_id.get_id pid) ns process_to_unmonitor "unmonitoring" unknown_node_msg node_found_fn              
@@ -937,11 +930,11 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     let node = ref None in    
 
     let clean_up_fn () =
-      let out_details = 
+      let out_details () = 
         if !node <> None 
         then Format.sprintf "encountered error while closing output channel for remote node %s" (Node_id.string_of_node (Potpourri.get_option !node))  
         else "encountered error while closing output channel" in
-      let in_details = 
+      let in_details () = 
         if !node <> None 
         then Format.sprintf "encountered error while closing input channel for remote node %s" (Node_id.string_of_node (Potpourri.get_option !node)) 
         else "encountered error while closing input channel" in
@@ -961,7 +954,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         begin            
           let receiver_not_found_err_msg = Format.sprintf "remote node %s, processed message %s, recipient unknown local process %s" 
               (Node_id.string_of_node @@ Potpourri.get_option !node) (string_of_message msg) (Process_id.string_of_pid receiver_pid) in            
-          log_msg ns ~level:I.Warning "node process message" receiver_not_found_err_msg 
+          log_msg ns I.Warning "node process message" (fun () -> receiver_not_found_err_msg)
         end           
       | Some (_,push_fn) ->
         return @@ push_fn (Some msg) in       
@@ -970,14 +963,14 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       if (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes (Potpourri.get_option !node)) = None
       then
         let node_str = Node_id.string_of_node (Potpourri.get_option !node) in 
-        log_msg ns ~level:Error "node process message" 
-          (Format.sprintf "remote node %s has been previously removed, stopping handler for remote node %s" node_str node_str)
+        log_msg ns Error "node process message" 
+          (fun () -> Format.sprintf "remote node %s has been previously removed, stopping handler for remote node %s" node_str node_str)
       else 
         catch
           (fun () ->
              read_value in_ch >>= fun (msg:message) -> 
-             log_msg ns ~level:Debug "node process message" 
-               (Format.sprintf "remote node %s, message %s" (Node_id.string_of_node @@ Potpourri.get_option !node) (string_of_message msg)) >>= fun () ->
+             log_msg ns Debug "node process message" 
+               (fun () -> Format.sprintf "remote node %s, message %s" (Node_id.string_of_node @@ Potpourri.get_option !node) (string_of_message msg)) >>= fun () ->
              match msg with
              | Node _ -> 
                handler ()            
@@ -1028,8 +1021,8 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                  match (Potpourri.of_option @@ fun () -> Process_id_hashtbl.find ns.monitor_table s) with
                  | None -> 
                    begin
-                     log_msg ns ~level:Error "node process message" 
-                       (Format.sprintf "no entry for %s in monitor table when processing %s" (Process_id.string_of_pid s) (string_of_message msg)) >>= fun () -> 
+                     log_msg ns Error "node process message" 
+                       (fun () -> Format.sprintf "no entry for %s in monitor table when processing %s" (Process_id.string_of_pid s) (string_of_message msg)) >>= fun () -> 
                      handler ()
                    end                                                               
                  | Some pids ->
@@ -1063,9 +1056,9 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                end) 
           (function e -> 
              clean_up_fn () >>= fun () -> 
-             log_msg ns ~exn:e ~level:Error "node process message" @@ 
-             Format.sprintf "unexpected exception while processing messages for remote node %s"  
-               (Node_id.string_of_node @@ Potpourri.get_option !node)
+             log_msg ns ~exn:e Error "node process message" @@ 
+             (fun () -> Format.sprintf "unexpected exception while processing messages for remote node %s"  
+               (Node_id.string_of_node @@ Potpourri.get_option !node))
           ) in
 
     let rec wait_for_node_msg () =
@@ -1078,7 +1071,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       catch
         (fun () ->
            read_value in_ch >>= fun (msg:message) -> 
-           log_msg ns ~level:Debug "node process message" (Format.sprintf "received message %s from %s" (string_of_message msg) string_of_client_addr) >>= fun () ->
+           log_msg ns Debug "node process message" (fun () -> Format.sprintf "received message %s from %s" (string_of_message msg) string_of_client_addr) >>= fun () ->
            match msg with
            | Node node' -> 
              begin
@@ -1092,39 +1085,39 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
              end                  
            | _ ->
              begin
-               log_msg ns ~level:Debug "node process message" (Format.sprintf "ignore message %s, waiting for handshake" (string_of_message msg)) >>= fun () ->
+               log_msg ns Debug "node process message" (fun () -> Format.sprintf "ignore message %s, waiting for handshake" (string_of_message msg)) >>= fun () ->
                wait_for_node_msg ()                 
              end
         )
-        (function e -> clean_up_fn () >>= fun () -> log_msg ns ~exn:e ~level:Error "node process message" "unexpected exception") in
+        (function e -> clean_up_fn () >>= fun () -> log_msg ns ~exn:e Error "node process message" (fun () -> "unexpected exception")) in
 
     wait_for_node_msg ()
 
   let connect_to_remote_nodes_unsafe ?pid (ns : node_state) (remote_node : Node_id.t) (ip : string) (port : int) (name : string) (remote_sock_addr : Unix.sockaddr) : unit I.t =  
     let open I in
-    log_msg ns ?pid ~level:Notice "connecting to remote node" (Format.sprintf "remote node %s:%d, name %s" ip port name) >>= fun () -> 
+    log_msg ns ?pid Debug "connecting to remote node" (fun () -> Format.sprintf "remote node %s:%d, name %s" ip port name) >>= fun () -> 
     open_connection remote_sock_addr >>= fun (in_ch,out_ch) ->
     write_value out_ch @@ Node (ns.local_node) >>= fun () ->               
     Node_id_hashtbl.replace ns.remote_nodes remote_node out_ch ;
     Node_id_hashtbl.replace ns.remote_nodes_heart_beats remote_node false ;
     async (fun () -> node_server_fn ns remote_sock_addr (in_ch,out_ch)) ;
-    log_msg ns ~level:Notice "connected to remote node" (Format.sprintf "remote node %s:%d, name %s" ip port name) 
+    log_msg ns Debug "connected to remote node" (fun () -> Format.sprintf "remote node %s:%d, name %s" ip port name) 
 
   let add_remote_node (ip : string) (port : int) (name : string) : Node_id.t t =
     let open I in
     fun (ns,pid) ->
       if !(ns.config) = None
       then
-        log_msg ~pid:(Process_id.get_id pid) ns ~level:Error "add remote node" 
-          "called add remote node when node is running with local only configuration" >>= fun () ->  
+        log_msg ~pid:(Process_id.get_id pid) ns Error "add remote node" 
+          (fun () -> "called add remote node when node is running with local only configuration") >>= fun () ->  
         fail Local_only_mode        
       else
-        log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "adding remote node" (Format.sprintf "%s:%d, name %s" ip port name) >>= fun () ->
+        log_msg ~pid:(Process_id.get_id pid) ns Debug "adding remote node" (fun () -> Format.sprintf "%s:%d, name %s" ip port name) >>= fun () ->
         let remote_sock_addr = Unix.ADDR_INET (Unix.inet_addr_of_string ip,port) in
         let remote_node = Node_id.make_remote_node ip port name in
         if Node_id_hashtbl.mem ns.remote_nodes remote_node
         then  
-          log_msg ~pid:(Process_id.get_id pid) ns ~level:Warning "remote node already exists" (Format.sprintf "%s:%d, name %s" ip port name) >>= fun () ->
+          log_msg ~pid:(Process_id.get_id pid) ns Warning "remote node already exists" (fun () -> Format.sprintf "%s:%d, name %s" ip port name) >>= fun () ->
           return (ns, pid, remote_node)
         else 
           connect_to_remote_nodes_unsafe ns remote_node ip port name remote_sock_addr >>= fun () ->
@@ -1135,11 +1128,11 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     fun (ns,pid) ->
       if !(ns.config) = None
       then
-        log_msg ~pid:(Process_id.get_id pid) ns ~level:Error "remote remote node" 
-          "called remove remote node when node is running with local only configuration" >>= fun () ->  
+        log_msg ~pid:(Process_id.get_id pid) ns Error "remote remote node" 
+          (fun () -> "called remove remote node when node is running with local only configuration") >>= fun () ->  
         fail Local_only_mode
       else
-        log_msg ~pid:(Process_id.get_id pid) ns ~level:Debug "removing remote node" (Format.sprintf "remote node : %s" @@ Node_id.string_of_node node) >>= fun () ->
+        log_msg ~pid:(Process_id.get_id pid) ns Debug "removing remote node" (fun () -> Format.sprintf "remote node : %s" @@ Node_id.string_of_node node) >>= fun () ->
         Node_id_hashtbl.remove ns.remote_nodes node ;
         Node_id_hashtbl.remove ns.remote_nodes_heart_beats node ;
         return (ns,pid, ())                
@@ -1157,7 +1150,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
            connect_to_remote_nodes ns rest
         )
         (fun e ->
-           log_msg ns ~exn:e ~level:Error "connecting to remote nodes" (Format.sprintf "unable to connect to remote node %s:%d" ip port) >>= fun () -> 
+           log_msg ns ~exn:e Error "connecting to remote nodes" (fun () -> Format.sprintf "unable to connect to remote node %s:%d" ip port) >>= fun () -> 
            connect_to_remote_nodes ns rest
         )
 
@@ -1166,11 +1159,11 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     let safe_send node out_ch () =
       catch 
         (fun () ->
-           log_msg ns ~level:Debug "sending heartbeat" (Format.sprintf "to node %s" @@ Node_id.string_of_node node) >>= fun () ->
+           log_msg ns Debug "sending heartbeat" (fun () -> Format.sprintf "to node %s" @@ Node_id.string_of_node node) >>= fun () ->
            write_value out_ch Heartbeat
         )
         (fun e -> 
-           log_msg ns ~exn:e ~level:Error "sending heartbeat" (Format.sprintf "failed for node %s, removing remote node" @@ Node_id.string_of_node node) >>= fun () ->
+           log_msg ns ~exn:e Error "sending heartbeat" (fun () -> Format.sprintf "failed for node %s, removing remote node" @@ Node_id.string_of_node node) >>= fun () ->
            return @@ Node_id_hashtbl.remove ns.remote_nodes node                
         ) 
     in
@@ -1191,16 +1184,16 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
              Node_id_hashtbl.remove ns.remote_nodes node ;                                
              async 
                (fun () ->
-                  log_msg ns ~level:Debug "node heartbeat process" 
-                    (Format.sprintf "failed to receive heartbeat in time from node %s in time, removing remote node" 
+                  log_msg ns Debug "node heartbeat process" 
+                    (fun () -> Format.sprintf "failed to receive heartbeat in time from node %s in time, removing remote node" 
                      @@ Node_id.string_of_node node) >>= fun () ->                    
                   match ns.node_mon_fn with
                   | None -> return ()
                   | Some f ->
                     catch 
                       (fun () -> (f node) (ns,make_new_pid ns.local_node ns) >>= fun _ -> return ())
-                      (fun e -> log_msg ns ~exn:e ~level:Error "node heartbeat process" 
-                          (Format.sprintf "encountered error while running node monitor function for remote node %s after heat beat not received in time" 
+                      (fun e -> log_msg ns ~exn:e Error "node heartbeat process" 
+                          (fun () -> Format.sprintf "encountered error while running node monitor function for remote node %s after heat beat not received in time" 
                            @@ Node_id.string_of_node node))                    
                )               
          else ()
@@ -1224,15 +1217,14 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                      remote_nodes_heart_beats = Node_id_hashtbl.create ~random:true 10 ;
                      monitor_table            = Process_id_hashtbl.create ~random:true 1000 ;
                      local_node               = Node_id.make_local_node local_config.Local_config.node_name ; 
-                     logger                   = local_config.Local_config.logger ;
                      monitor_ref_id           = ref 0 ;
                      config                   = ref None ;
                      node_mon_fn              = node_monitor_fn ;
                    } in
-          log_msg ns ~level:Info "node start up" 
-            (Format.sprintf "{Distributed library version : %s ; Threading implementation : [name : %s ; version : %s ; description : %s]}" 
+          log_msg ns Info "node start up" 
+            (fun () -> Format.sprintf "{Distributed library version : %s ; Threading implementation : [name : %s ; version : %s ; description : %s]}" 
                dist_lib_version lib_name lib_version lib_description) >>= fun () ->
-          log_msg ns ~level:Info "node start up" (Format.sprintf "local only mode with configuration of %s" @@ string_of_config node_config) >>= fun () ->
+          log_msg ns Info "node start up" (fun () -> Format.sprintf "local only mode with configuration of %s" @@ string_of_config node_config) >>= fun () ->
           if process = None
           then return ()
           else 
@@ -1247,15 +1239,14 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                      remote_nodes_heart_beats = Node_id_hashtbl.create ~random:true 10 ;
                      monitor_table            = Process_id_hashtbl.create ~random:true 1000 ;
                      local_node               = Node_id.make_remote_node remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name ; 
-                     logger                   = remote_config.Remote_config.logger ;
                      monitor_ref_id           = ref 0 ;
                      config                   = ref (Some remote_config) ;
                      node_mon_fn              = node_monitor_fn ;
                    } in
-          log_msg ns ~level:Info "node start up" 
-            (Format.sprintf "{Distributed library version : %s ; Threading implementation : [name : %s ; version : %s ; description : %s]}" 
+          log_msg ns Info "node start up" 
+            (fun () -> Format.sprintf "{Distributed library version : %s ; Threading implementation : [name : %s ; version : %s ; description : %s]}" 
                dist_lib_version lib_name lib_version lib_description) >>= fun () ->
-          log_msg ns ~level:Info "node start up" (Format.sprintf "remote mode with configuration of %s" @@ string_of_config node_config) >>= fun () ->
+          log_msg ns Info "node start up" (fun () -> Format.sprintf "remote mode with configuration of %s" @@ string_of_config node_config) >>= fun () ->
           connect_to_remote_nodes ns remote_config.Remote_config.remote_nodes >>= fun () ->
           let local_sock_addr =  Unix.ADDR_INET (Unix.inet6_addr_any , remote_config.Remote_config.local_port) in
           I.establish_server ~backlog:remote_config.Remote_config.connection_backlog local_sock_addr (node_server_fn ns) >>= fun (command_process_server) ->
@@ -1263,10 +1254,11 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
           async (fun () -> process_remote_heart_beats_timeout_fn ns remote_config.Remote_config.heart_beat_timeout) ; 
           at_exit (
             fun () ->
-              log_msg ns ~level:Info "node shutting down" (Format.sprintf "start clean up actions for remote mode with configuration of %s" @@ string_of_config node_config) >>= fun () ->
-              shutdown_server command_process_server >>= fun () ->
-              Node_id_hashtbl.fold (fun _ out_ch _ -> safe_close_channel ns (`Out out_ch) "node shutting down" "error while closing remote connection") ns.remote_nodes (return ()) >>= fun () ->
-              log_msg ns ~level:Info "node shutting down" (Format.sprintf "finished clean up actions for remote mode with configuration of %s" @@ string_of_config node_config)                                                                                  
+              log_msg ns Info "node shutting down" (fun () -> Format.sprintf "start clean up actions for remote mode with configuration of %s" @@ string_of_config node_config) >>= fun () ->
+              Node_id_hashtbl.fold (fun _ out_ch _ -> safe_close_channel ns (`Out out_ch) "node shutting down" (fun () -> "error while closing remote connection")) ns.remote_nodes (return ()) >>= fun () ->
+              catch (fun () -> shutdown_server command_process_server) (fun exn -> log_msg ns Warning ~exn "node shutting down" (fun () -> "error while shutting down server")) >>= fun () ->
+              log_msg ns Info "node shutting down" (fun () -> Format.sprintf "finished clean up actions for remote mode with configuration of %s" @@ string_of_config node_config)
+              
           );   
           if process = None
           then return ()

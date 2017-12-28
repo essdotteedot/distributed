@@ -17,9 +17,8 @@
 &nbsp;&nbsp;<span class="keyword">type</span>&nbsp;input_channel<br>
 &nbsp;&nbsp;<span class="keyword">type</span>&nbsp;output_channel<br>
 &nbsp;&nbsp;<span class="keyword">type</span>&nbsp;server<br>
-&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;logger<br>
 &nbsp;&nbsp;<span class="keyword">exception</span>&nbsp;<span class="constructor">Timeout</span><br>
-&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;level&nbsp;=&nbsp;<span class="constructor">Debug</span>&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Info</span>&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Notice</span>&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Warning</span>&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Error</span>&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Fatal</span><br>
+&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;level&nbsp;=&nbsp;<span class="constructor">Debug</span>&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Info</span>&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Warning</span>&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Error</span><br>
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;lib_name&nbsp;:&nbsp;string<br>
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;lib_version&nbsp;:&nbsp;string<br>
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;lib_description&nbsp;:&nbsp;string<br>
@@ -63,11 +62,8 @@
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;shutdown_server&nbsp;:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Nonblock_io</span>.server&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Nonblock_io</span>.t<br>
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;log&nbsp;:<br>
-&nbsp;&nbsp;&nbsp;&nbsp;?exn:exn&nbsp;<span class="keywordsign">-&gt;</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;?location:string&nbsp;*&nbsp;int&nbsp;*&nbsp;int&nbsp;<span class="keywordsign">-&gt;</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;logger:<span class="constructor">Distributed</span>.<span class="constructor">Nonblock_io</span>.logger&nbsp;<span class="keywordsign">-&gt;</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;level:<span class="constructor">Distributed</span>.<span class="constructor">Nonblock_io</span>.level&nbsp;<span class="keywordsign">-&gt;</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Nonblock_io</span>.t<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Nonblock_io</span>.level&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;(unit&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;string)&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Nonblock_io</span>.t<br>
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;sleep&nbsp;:&nbsp;float&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Nonblock_io</span>.t<br>
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;timeout&nbsp;:&nbsp;float&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Distributed</span>.<span class="constructor">Nonblock_io</span>.t<br>
 &nbsp;&nbsp;<span class="keyword">val</span>&nbsp;pick&nbsp;:<br>

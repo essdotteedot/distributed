@@ -22,7 +22,6 @@
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;message_type&nbsp;=&nbsp;<span class="constructor">M</span>.t<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;matcher<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;monitor_ref<br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;logger&nbsp;=&nbsp;<span class="constructor">I</span>.logger<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;monitor_reason&nbsp;=<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Normal</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="constructor">Process_id</span>.t<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Exception</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="constructor">Process_id</span>.t&nbsp;*&nbsp;exn<br>
@@ -38,11 +37,9 @@
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;connection_backlog&nbsp;:&nbsp;int;<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;node_name&nbsp;:&nbsp;string;<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;node_ip&nbsp;:&nbsp;string;<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;logger&nbsp;:&nbsp;logger;<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">end</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">module</span>&nbsp;<span class="constructor">Local_config</span>&nbsp;:<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">sig</span>&nbsp;<span class="keyword">type</span>&nbsp;t&nbsp;=&nbsp;{&nbsp;node_name&nbsp;:&nbsp;string;&nbsp;logger&nbsp;:&nbsp;logger;&nbsp;}&nbsp;<span class="keyword">end</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">module</span>&nbsp;<span class="constructor">Local_config</span>&nbsp;:&nbsp;<span class="keyword">sig</span>&nbsp;<span class="keyword">type</span>&nbsp;t&nbsp;=&nbsp;{&nbsp;node_name&nbsp;:&nbsp;string;&nbsp;}&nbsp;<span class="keyword">end</span><br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;node_config&nbsp;=&nbsp;<span class="constructor">Local</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="constructor">Local_config</span>.t&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Remote</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="constructor">Remote_config</span>.t<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;return&nbsp;:&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;t<br>
 &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;(&nbsp;&gt;&gt;=&nbsp;)&nbsp;:&nbsp;<span class="keywordsign">'</span>a&nbsp;t&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;(<span class="keywordsign">'</span>a&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>b&nbsp;t)&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>b&nbsp;t<br>

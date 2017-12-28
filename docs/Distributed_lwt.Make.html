@@ -18,8 +18,9 @@
 &nbsp;</div>
 <h1>Functor <a href="type_Distributed_lwt.Make.html">Distributed_lwt.Make</a></h1>
 
-<pre><span class="keyword">module</span> Make <code class="code">(</code><code class="code"><span class="constructor">M</span></code><code class="code"> : </code><code class="type"><a href="Distributed.Message_type.html">Distributed.Message_type</a></code><code class="code">) </code>: <code class="type"><a href="Distributed.Process.html">Distributed.Process</a></code><code class="type">  with type 'a io = 'a Lwt.t and type message_type = M.t and type logger = Lwt_log.logger</code></pre><div class="info module top">
-Functor to create a module of type <a href="Distributed.Process.html"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span></code></a> given a message module <code class="code"><span class="constructor">M</span></code> of type <a href="Distributed.Message_type.html"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Message_type</span></code></a>.<br>
+<pre><span class="keyword">module</span> Make <code class="code">(</code><code class="code"><span class="constructor">M</span></code><code class="code"> : </code><code class="type"><a href="Distributed.Message_type.html">Distributed.Message_type</a></code><code class="code">) </code> <code class="code">(</code><code class="code"><span class="constructor">L</span></code><code class="code"> : </code><code class="type"><a href="Distributed_lwt.CustomerLogger.html">CustomerLogger</a></code><code class="code">) </code>: <code class="type"><a href="Distributed.Process.html">Distributed.Process</a></code><code class="type">  with type 'a io = 'a Lwt.t and type message_type = M.t</code></pre><div class="info module top">
+Functor to create a module of type <a href="Distributed.Process.html"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span></code></a> given a message module <code class="code"><span class="constructor">M</span></code> of type <a href="Distributed.Message_type.html"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Message_type</span></code></a>
+     and a custom logger module <code class="code"><span class="constructor">L</span></code> of type <a href="Distributed_lwt.CustomerLogger.html"><code class="code"><span class="constructor">Distributed_lwt</span>.<span class="constructor">CustomerLogger</span></code></a>.<br>
 </div>
 <table border="0" cellpadding="3" width="100%">
 <tr>
@@ -31,6 +32,11 @@ Functor to create a module of type <a href="Distributed.Process.html"><code clas
 <code>M</code></td>
 <td align="center" valign="top">:</td>
 <td><code class="type"><a href="Distributed.Message_type.html">Distributed.Message_type</a></code>
+<tr>
+<td align="center" valign="top" width="15%">
+<code>L</code></td>
+<td align="center" valign="top">:</td>
+<td><code class="type"><a href="Distributed_lwt.CustomerLogger.html">CustomerLogger</a></code>
 </table>
 </td>
 </tr>
@@ -85,12 +91,6 @@ The abstract type representing a matcher to be used with <a href="Distributed.Pr
 <pre><span id="TYPEmonitor_ref"><span class="keyword">type</span> <code class="type"></code>monitor_ref</span> </pre>
 <div class="info ">
 The abstract type representing a monitor_ref that is returned when a processes is monitored and can be used to unmonitor it.<br>
-</div>
-
-
-<pre><span id="TYPElogger"><span class="keyword">type</span> <code class="type"></code>logger</span> </pre>
-<div class="info ">
-The abstract type representing the logger to be used.<br>
 </div>
 
 

@@ -20,7 +20,7 @@
 &nbsp;</div>
 <h1>Functor <a href="type_Distributed.Make.html">Distributed.Make</a></h1>
 
-<pre><span class="keyword">module</span> Make <code class="code">(</code><code class="code"><span class="constructor">I</span></code><code class="code"> : </code><code class="type"><a href="Distributed.Nonblock_io.html">Nonblock_io</a></code><code class="code">) </code> <code class="code">(</code><code class="code"><span class="constructor">M</span></code><code class="code"> : </code><code class="type"><a href="Distributed.Message_type.html">Message_type</a></code><code class="code">) </code>: <code class="type"><a href="Distributed.Process.html">Process</a></code><code class="type">  with type message_type = M.t and type 'a io = 'a I.t and type logger = I.logger</code></pre><div class="info module top">
+<pre><span class="keyword">module</span> Make <code class="code">(</code><code class="code"><span class="constructor">I</span></code><code class="code"> : </code><code class="type"><a href="Distributed.Nonblock_io.html">Nonblock_io</a></code><code class="code">) </code> <code class="code">(</code><code class="code"><span class="constructor">M</span></code><code class="code"> : </code><code class="type"><a href="Distributed.Message_type.html">Message_type</a></code><code class="code">) </code>: <code class="type"><a href="Distributed.Process.html">Process</a></code><code class="type">  with type message_type = M.t and type 'a io = 'a I.t</code></pre><div class="info module top">
 Functor to create a module of type <a href="Distributed.Process.html"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span></code></a> given a message module <code class="code"><span class="constructor">M</span></code> of type <a href="Distributed.Message_type.html"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Message_type</span></code></a>.<br>
 </div>
 <table border="0" cellpadding="3" width="100%">
@@ -92,12 +92,6 @@ The abstract type representing a matcher to be used with <a href="Distributed.Pr
 <pre><span id="TYPEmonitor_ref"><span class="keyword">type</span> <code class="type"></code>monitor_ref</span> </pre>
 <div class="info ">
 The abstract type representing a monitor_ref that is returned when a processes is monitored and can be used to unmonitor it.<br>
-</div>
-
-
-<pre><span id="TYPElogger"><span class="keyword">type</span> <code class="type"></code>logger</span> </pre>
-<div class="info ">
-The abstract type representing the logger to be used.<br>
 </div>
 
 

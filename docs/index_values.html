@@ -159,13 +159,18 @@ The version implementation, for logging purposes.
 </td></tr>
 <tr><td><a href="Distributed.Nonblock_io.html#VALlog">log</a> [<a href="Distributed.Nonblock_io.html">Distributed.Nonblock_io</a>]</td>
 <td><div class="info">
-<code class="code">log ?exn ?location logger level message</code> logs a message using <code class="code">logger</code>.
+<code class="code">log level message_formatter</code> logs a message at the specified level using the formatter provided.
 </div>
 </td></tr>
 <tr><td align="left"><br>M</td></tr>
 <tr><td><a href="Distributed.Process.html#VALmonitor">monitor</a> [<a href="Distributed.Process.html">Distributed.Process</a>]</td>
 <td><div class="info">
 <code class="code">monitor pid</code> will allows the calling process to monitor <code class="code">pid</code>.
+</div>
+</td></tr>
+<tr><td><a href="Distributed_lwt.CustomerLogger.html#VALmsg">msg</a> [<a href="Distributed_lwt.CustomerLogger.html">Distributed_lwt.CustomerLogger</a>]</td>
+<td><div class="info">
+<code class="code">msg level logger</code> returns a logger that can be use to log levels at the provided level.
 </div>
 </td></tr>
 <tr><td align="left"><br>O</td></tr>

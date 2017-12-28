@@ -15,14 +15,9 @@
     - just wait for a registration message for a given name then sends the pid back to then
       original whois requester                    
 *)
-module D = Distributed_lwt.Make(Message)
-
-let logger =
-  Lwt_log.add_rule "*" Lwt_log.Fatal ; 
-  Lwt_log.channel ~template:"$(date).$(milliseconds) {$(level)} : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout () 
+module D = Distributed_lwt.Make (Message) (Custom_logger)
 
 let config = D.Remote { D.Remote_config.node_name = "name_server" ; 
-                        D.Remote_config.logger = logger ;   
                         D.Remote_config.local_port = 45000 ;
                         D.Remote_config.heart_beat_frequency = 5.0 ;
                         D.Remote_config.heart_beat_timeout = 10.0 ;
@@ -99,5 +94,7 @@ let main_proc () = D.(
     ]
   )
 
-let () = 
+let () =
+  Logs.Src.set_level Custom_logger.log_src (Some Logs.App) ;
+  Logs.set_reporter @@ Custom_logger.lwt_reporter () ; 
   Lwt_main.run (D.run_node ~process:main_proc config)

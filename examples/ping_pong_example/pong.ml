@@ -1,11 +1,6 @@
-module D = Distributed_lwt.Make (Ping_message)
-
-let logger =
-  Lwt_log.add_rule "*" Lwt_log.Fatal ; 
-  Lwt_log.channel ~template:"$(date).$(milliseconds) {$(level)} : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout () 
+module D = Distributed_lwt.Make (Ping_message) (Custom_logger)
 
 let config = D.Remote { D.Remote_config.node_name = "pong_node" ; 
-                        D.Remote_config.logger = logger ;
                         D.Remote_config.local_port = 47000 ;
                         D.Remote_config.heart_beat_frequency = 5.0 ;
                         D.Remote_config.heart_beat_timeout = 10.0 ;
@@ -40,4 +35,6 @@ let pong () = D.(
   )
 
 let () =
+  Logs.Src.set_level Custom_logger.log_src (Some Logs.App) ;
+  Logs.set_reporter @@ Custom_logger.lwt_reporter () ;
   Lwt.(Lwt_main.run ((D.run_node ~process:pong config) >>= fun () -> fst @@ wait ()))    

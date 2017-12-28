@@ -1,15 +1,15 @@
-(* The add client will add the name server node dynamically at startup,
+(* The add client will add the name server node dynamically at start up,
    then spawn and monitor a local process to add two random number between
    0 and 100 infinitely. 
 
    The idea is to make the add process resilient to failures of the add server
-   remote server and the name server. 
+   and the name server. 
 
    main main_proc
     - spawns and monitors find_remote_process, if it goes down then the main process
        will try to add the name server again and restart the find_remote_process again
    find_remote_process
-    - looks up the add remote process, if it failes raises Failed_to_lookup which
+    - looks up the add server, if it fails it raises Failed_to_lookup which
       causes a restart from main process which is monitoring it 
     - attempts to add the add_server node, again a failure will result in a restart from
       the main process
@@ -23,17 +23,11 @@
        which is monitoring it will restart with
      - otherwise it loops back and adds more ints   
 *)
-
-module D = Distributed_lwt.Make(Message)
+module D = Distributed_lwt.Make (Message) (Custom_logger)
 
 exception Failed_to_lookup
 
-let logger =
-  Lwt_log.add_rule "*" Lwt_log.Fatal ; 
-  Lwt_log.channel ~template:"$(date).$(milliseconds) {$(level)} : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout () 
-
 let config = D.Remote { D.Remote_config.node_name = "add_client" ; 
-                        D.Remote_config.logger = logger ;   
                         D.Remote_config.local_port = 47000 ;
                         D.Remote_config.heart_beat_frequency = 5.0 ;
                         D.Remote_config.heart_beat_timeout = 10.0 ;
@@ -119,5 +113,7 @@ let rec main_proc () = D.(
   )  
 
 let () =
+  Logs.Src.set_level Custom_logger.log_src (Some Logs.App) ;
+  Logs.set_reporter @@ Custom_logger.lwt_reporter () ;
   Lwt_main.run (D.run_node ~process:(D.(fun () -> main_proc () >>= fun _ -> return ())) config)
 

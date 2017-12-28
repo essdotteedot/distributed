@@ -50,18 +50,13 @@ module type Nonblock_io = sig
   type server
   (** A type to represent a server *)
 
-  type logger
-  (** A type to represent a logger *)
-
   exception Timeout
   (** Exception raised by {!val:timeout} operation *)
 
   type level = Debug 
              | Info
-             | Notice
              | Warning
-             | Error
-             | Fatal
+             | Error             
   (** Type to represent levels of a log message. *)
 
   val lib_name : string
@@ -125,12 +120,8 @@ module type Nonblock_io = sig
   val shutdown_server : server -> unit t
   (** [shutdown_server server] will shutdown [server]. *)    
 
-  val log : ?exn:exn -> ?location:string * int * int -> logger:logger -> level:level -> string -> unit t
-  (** [log ?exn ?location logger level message] logs a message using [logger].        
-      If exn is provided, then its string representation (= Printexc.to_string exn) will be append to the message, 
-      and if possible the back trace will also be logged. Location contains the location of the logging directive, 
-      it is of the form (file_name, line, column).
-  *)     
+  val log : level -> (unit -> string) -> unit t 
+  (** [log level message_formatter] logs a message at the specified level using the formatter provided. *)     
 
   val sleep : float -> unit t
   (** [sleep d] is a thread that remains suspended for [d] seconds and then terminates. *)
@@ -188,9 +179,6 @@ module type Process = sig
   type monitor_ref
   (** The abstract type representing a monitor_ref that is returned when a processes is monitored and can be used to unmonitor it. *)   
 
-  type logger
-  (** The abstract type representing the logger to be used. *)         
-
   type monitor_reason = Normal of Process_id.t                   (** Process terminated normally. *)
                       | Exception of Process_id.t * exn          (** Process terminated with exception. *)
                       | UnkownNodeId of Process_id.t * Node_id.t (** An operation failed because the remote node id is unknown. *)
@@ -205,15 +193,13 @@ module type Process = sig
                heart_beat_frequency : float                        ; (** The amount of time between sending hearts to nodes that are connected to this node. *) 
                connection_backlog   : int                          ; (** The the argument used when listening on a socket. *)
                node_name            : string                       ; (** The name of this node. *) 
-               node_ip              : string                       ; (** The external ip address of this node. *)
-               logger               : logger                       ; (** The logger that should be used. *) 
+               node_ip              : string                       ; (** The external ip address of this node. *)               
              }    
   end                 
 
   (** The configuration of a node to be run as a local node i.e., one that can not send or receive messages with other nodes. *)
   module Local_config : sig
-    type t = { node_name          : string ; (** The name of this node. *) 
-               logger             : logger ; (** The logger that should be used. *)
+    type t = { node_name          : string ; (** The name of this node. *)                
              }
   end
 
@@ -351,6 +337,6 @@ module type Process = sig
   *)
 end
 
-module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_type = M.t and type 'a io = 'a I.t and type logger = I.logger)
+module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_type = M.t and type 'a io = 'a I.t)
 (** Functor to create a module of type {!modtype:Process} given a message module [M] of type {!modtype:Message_type}. *)
 

@@ -1,4 +1,9 @@
-module IO_LWT = struct
+module type CustomerLogger = sig
+
+  val msg : Logs.level -> 'a Logs_lwt.log  
+end
+
+module IO_LWT(L : CustomerLogger) = struct
 
   type 'a t = 'a Lwt.t
 
@@ -10,14 +15,10 @@ module IO_LWT = struct
 
   type server = Lwt_io.server
 
-  type logger = Lwt_log.logger
-
   type level = Debug 
              | Info
-             | Notice
              | Warning
-             | Error
-             | Fatal
+             | Error             
 
   exception Timeout = Lwt_unix.Timeout  
 
@@ -55,16 +56,14 @@ module IO_LWT = struct
 
   let establish_server ?backlog sock_addr server_fn = Lwt_io.establish_server_with_client_address ?backlog sock_addr server_fn
 
-  let of_lwt_level = function
-    | Debug -> Lwt_log.Debug 
-    | Info -> Lwt_log.Info
-    | Notice -> Lwt_log.Notice
-    | Warning -> Lwt_log.Warning
-    | Error -> Lwt_log.Error
-    | Fatal -> Lwt_log.Fatal
+  let of_logs_lwt_level = function
+    | Debug -> Logs.Debug 
+    | Info -> Logs.Info
+    | Warning -> Logs.Warning
+    | Error -> Logs.Error    
 
-  let log ?exn ?location ~(logger:logger) ~(level:level) (msg:string) =
-    Lwt_log.log ?exn ?location ~level:(of_lwt_level level) ~logger msg    
+  let log (level:level) (msg_fmtter:unit -> string) =
+    L.msg (of_logs_lwt_level level) (fun m -> m "%s" @@ msg_fmtter ()) >>= fun _ -> return ()        
 
   let shutdown_server = Lwt_io.shutdown_server
 
@@ -78,5 +77,5 @@ module IO_LWT = struct
 
 end
 
-module Make(M : Distributed.Message_type) : (Distributed.Process with type 'a io = 'a Lwt.t and type message_type = M.t and type logger = Lwt_log.logger) =
-  Distributed.Make(IO_LWT)(M)
+module Make(M : Distributed.Message_type) (L : CustomerLogger) : (Distributed.Process with type 'a io = 'a Lwt.t and type message_type = M.t) =
+  Distributed.Make(IO_LWT(L))(M)

@@ -33,19 +33,40 @@ module M  = struct
     | Raise -> "Raise"  
 end
 
-(* create a Distributed_lwt implementation based on the message type defined above *)
-module D = Distributed_lwt.Make (M)
-
-(* The setup of the logger is left to the client, in this example the logger will
-   simply log to stdout. The resultant logger is passed in as part of the 
-   node configuration.
+(* The setup of the logger is left to the application, in this example the logger will
+   simply log to stdout. We use Logs_lwt as the logging library for this example.
 *)
-let logger =
-  Lwt_log.add_rule "*" Lwt_log.Fatal ; 
-  Lwt_log.channel ~template:"$(date).$(milliseconds) {$(level)} : $(message)" ~close_mode:`Close ~channel:Lwt_io.stdout () 
+module L = struct
+  let log_src = Logs.Src.create "distributed" ~doc:"logs events related to the distributed library"
+
+  module Log = (val Logs_lwt.src_log log_src : Logs_lwt.LOG)
+
+  let msg = Log.msg
+
+  (* slightly modified version of reporter defined in Logs_lwt manual : http://erratique.ch/software/logs/doc/Logs_lwt.html#report_ex*)
+  let lwt_reporter () =
+    let buf_fmt () =
+      let b = Buffer.create 512 in
+      Format.formatter_of_buffer b, fun () -> let m = Buffer.contents b in Buffer.reset b; m
+    in
+    let app, app_flush = buf_fmt () in
+    let reporter = Logs.format_reporter ~app ~dst:app () in
+    let report src level ~over k msgf =
+      let k' () =
+        let write () = Lwt_io.write Lwt_io.stdout (app_flush ()) in
+        let unblock () = over (); Lwt.return_unit in
+        Lwt.finalize write unblock |> Lwt.ignore_result;
+        k ()
+      in
+      reporter.Logs.report src level ~over:(fun () -> ()) k' msgf;
+    in
+    { Logs.report = report }  
+end
+
+(* create a Distributed_lwt implementation based on the message type defined above *)
+module D = Distributed_lwt.Make (M) (L)
 
 let consumer_config = D.Remote { D.Remote_config.node_name = "consumer" ; 
-                                 D.Remote_config.logger = logger ;   
                                  D.Remote_config.local_port = 47000 ;
                                  D.Remote_config.heart_beat_frequency = 5.0 ;
                                  D.Remote_config.heart_beat_timeout = 10.0 ;
@@ -55,7 +76,6 @@ let consumer_config = D.Remote { D.Remote_config.node_name = "consumer" ;
                                } 
 
 let producer_config = D.Remote { D.Remote_config.node_name = "producer" ; 
-                                 D.Remote_config.logger = logger ;
                                  D.Remote_config.local_port = 46000 ;
                                  D.Remote_config.heart_beat_frequency = 5.0 ;
                                  D.Remote_config.heart_beat_timeout = 10.0 ;
@@ -162,6 +182,9 @@ let producer_proc () = D.(
 
 let () =
   let args = Sys.argv in
+  (* set the log level and the reporter*)
+  Logs.Src.set_level L.log_src (Some Logs.App) ;
+  Logs.set_reporter @@ L.lwt_reporter () ;
   if Array.length args <> 2
   then Format.printf "Usage : %s <producer/consumer>\n" args.(0)
   else if args.(1) = "producer" 
