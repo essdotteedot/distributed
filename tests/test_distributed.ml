@@ -2192,7 +2192,7 @@ let suite = "Test Distributed" >::: [
     "Test get_remote_node local with remote config"                       >:: test_get_remote_node_local_remote_config ;
     "Test get_remote_node_remote remote config"                           >:: test_get_remote_node_remote_remote_config ;
 
-    "Test heartbeat"                                                      >:: test_heart_beat
+    (*"Test heartbeat"                                                      >:: test_heart_beat*)
   ]
 
 (* slightly modified version of reporter defined in Logs_lwt manual : http://erratique.ch/software/logs/doc/Logs_lwt.html#report_ex*)
