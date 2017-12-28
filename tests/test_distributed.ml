@@ -2212,7 +2212,7 @@ let lwt_reporter () =
   { Logs.report = report }  
 
 let _ =
-  Logs.Src.set_level log_src (Some Logs.Debug) ;
+  Logs.Src.set_level log_src (Some Logs.App) ;
   Logs.set_reporter @@ lwt_reporter () ;
   run_test_tt_main suite 				 
 
