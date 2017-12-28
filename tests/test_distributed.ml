@@ -152,6 +152,9 @@ let rec close_pipes = function
   | [] -> Lwt.return ()
   | (in_ch,out_ch)::chs -> Lwt.(pipe_close in_ch >>= fun () -> pipe_close out_ch >>= fun () -> close_pipes chs)
 
+let safe_lwt_run lwt_exp =
+  Lwt.(Lwt_main.run (catch (fun () -> lwt_exp) (fun e -> assert_failure @@ Format.sprintf "Test encountered exception %s, backtrace : %s" (Printexc.to_string e) (Printexc.get_backtrace ()))))
+
 (* there is a lot of code duplication because ocaml currently does not support higher kinded polymorphism *)  
 
 (* return, bind test *)
@@ -165,7 +168,7 @@ let test_return_bind _ =
       result := Some i ;
       return ()       
     ) in             
-  Lwt_main.run (P.run_node node_config ~process:test_proc) ;
+  safe_lwt_run (P.run_node node_config ~process:test_proc) ;
   assert_equal ~msg:"return, bind failed" (Some 5) !result ;     
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
 
@@ -183,7 +186,7 @@ let test_spawn_local_local_config _ =
       mres := mon_res ;
       return ()        
     ) in             
-  Lwt_main.run (P.run_node node_config ~process:test_proc) ;
+  safe_lwt_run (P.run_node node_config ~process:test_proc) ;
   assert_equal ~msg:"monitor result should have been None" None !mres ;
   assert_bool "process was not spawned" !result ;     
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
@@ -208,7 +211,7 @@ let test_spawn_local_remote_config _ =
       return ()        
     ) in             
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       P.run_node node_config ~process:test_proc >>= fun () -> 
       (get_option !exit_fn) () >>= fun () ->
       assert_bool "process was not spawned" !result ;
@@ -272,7 +275,7 @@ let test_spawn_remote_remote_config _ =
     ) in
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->
       assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
@@ -302,7 +305,7 @@ let test_spawn_monitor_local_local_config _ =
       mres := mon_res ;  
       return ()        
     ) in             
-  Lwt.(Lwt_main.run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  Lwt.(safe_lwt_run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
   assert_bool "process was not spawned" (!result && !result_monitor <> None) ;
   assert_equal ~msg:"termination monitor result not received" (Some "got normal termination") !result_monitor ;     
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections) ;
@@ -337,7 +340,7 @@ let test_spawn_monitor_local_remote_config _ =
       return ()             
     ) in             
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       P.run_node node_config ~process:test_proc >>= fun () -> 
       (get_option !exit_fn) () >>= fun () ->
       assert_bool "process was not spawned" (!result && !result_monitor <> None) ;
@@ -400,7 +403,7 @@ let test_spawn_monitor_remote_remote_config _ =
     ) in
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"termination monitor result not received" (Some "got normal termination") !result_monitor ;     
@@ -432,7 +435,7 @@ let test_monitor_local_local_config _ =
       ] >>= fun _ ->
       return ()        
     ) in             
-  Lwt.(Lwt_main.run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
+  Lwt.(safe_lwt_run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
   assert_bool "process was not spawned" (!result && !result_monitor <> None) ; 
   assert_equal ~msg:"monitor failed" (Some "got normal termination") !result_monitor ;    
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
@@ -464,7 +467,7 @@ let test_monitor_local_remote_config _ =
       return ()       
     ) in             
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       P.run_node node_config ~process:test_proc >>= fun () -> 
       (get_option !exit_fn) () >>= fun () ->
       assert_bool "process was not spawned" (!result && !result_monitor <> None) ;
@@ -524,7 +527,7 @@ let test_monitor_remote_remote_config _ =
     ) in
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"monitor failed" (Some "got normal termination") !result_monitor ;      
@@ -557,7 +560,7 @@ let test_unmonitor_local_local_config _ =
       unmon_res := received ;
       return ()        
     ) in             
-  Lwt.(Lwt_main.run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
+  Lwt.(safe_lwt_run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
   assert_bool "process was not spawned" !result ;
   assert_equal ~msg:"unmonitor failed" None !unmon_res ;     
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
@@ -591,7 +594,7 @@ let test_unmonitor_local_remote_config _ =
       return ()        
     ) in             
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       P.run_node node_config ~process:test_proc >>= fun () -> 
       (get_option !exit_fn) () >>= fun () ->
       assert_bool "process was not spawned" !result ;  
@@ -653,7 +656,7 @@ let test_unmonitor_remote_remote_config _ =
     ) in
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"unmonitor failed" None !unmon_res ;    
@@ -687,7 +690,7 @@ let test_unmonitor_from_spawn_monitor_local_local_config _ =
       unmon_res := received ;
       return ()             
     ) in             
-  Lwt.(Lwt_main.run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
+  Lwt.(safe_lwt_run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
   assert_bool "Process was not spawned and monitored" (!result && !mres <> None) ;
   assert_equal ~msg:"unmonitor failed" None !unmon_res ;       
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
@@ -722,7 +725,7 @@ let test_unmonitor_from_spawn_monitor_local_remote_config _ =
       return ()                 
     ) in             
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       P.run_node node_config ~process:test_proc >>= fun () -> 
       (get_option !exit_fn) () >>= fun () ->
       assert_bool "Process was not spawned and monitored" (!result && !mres <> None) ;
@@ -785,7 +788,7 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
     ) in
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"unmonitor failed" None !unmon_res ;       
@@ -805,7 +808,7 @@ let test_get_remote_nodes_local_only _ =
       get_remote_nodes >>= fun nodes ->
       return (num_remote_nodes := (List.length nodes))       
     ) in             
-  Lwt_main.run (P.run_node node_config ~process:test_proc) ;     
+  safe_lwt_run (P.run_node node_config ~process:test_proc) ;     
   assert_equal ~msg:"get remote nodes in local config should return 0" 0 !num_remote_nodes ;
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
 
@@ -825,7 +828,7 @@ let test_get_remote_nodes_remote_local _ =
       return (num_remote_nodes := (List.length nodes))         
     ) in             
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       P.run_node node_config ~process:test_proc >>= fun () -> 
       (get_option !exit_fn) () >>= fun () ->
       assert_equal ~msg:"get remote nodes in remote config with no remote nodes should return 0" 0 !num_remote_nodes ;
@@ -875,7 +878,7 @@ let test_get_remote_nodes_remote_conifg _ =
     ) in
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->
       assert_equal ~msg:"get remote nodes in remote config with 1 remote nodes should return 1" 1 !num_remote_nodes ;
@@ -914,7 +917,7 @@ let test_broadcast_local_only _ =
       loop_back_received := recv_res ;            
       return ()
     ) in           
-  Lwt.(Lwt_main.run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  Lwt.(safe_lwt_run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
   assert_equal ~msg:"broacast failed" 2 !broadcast_received ;
   assert_equal ~msg:"broadcast message sent to originator" None !loop_back_received ;    
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
@@ -954,7 +957,7 @@ let test_broadcast_remote_local _ =
       return ()
     ) in           
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       P.run_node node_config ~process:test_proc >>= fun () -> 
       (get_option !exit_fn) () >>= fun () ->
       assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
@@ -1043,7 +1046,7 @@ let test_broadcast_remote_remote _ =
     ) in      
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->
       assert_equal ~msg:"broacast fail" 4 !broadcast_received ;
@@ -1092,7 +1095,7 @@ let test_send_local_only _ =
       ] >>= fun _ ->           
       return ()
     ) in           
-  Lwt.(Lwt_main.run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  Lwt.(safe_lwt_run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
   assert_bool "spawn and monitor failed" (!mres <> None) ;
   assert_equal ~msg:"send failed" (Some "sent message") !received_message ;
   assert_bool "sending to invalid process should have succeeded" (not !send_failed) ;    
@@ -1142,7 +1145,7 @@ let test_send_remote_local _ =
       return ()
     ) in           
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       P.run_node node_config ~process:test_proc >>= fun () -> 
       (get_option !exit_fn) () >>= fun () ->
       assert_bool "spawn and monitor failed" (!mres <> None) ;
@@ -1239,7 +1242,7 @@ let test_send_remote_remote _ =
     ) in      
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->
       assert_equal ~msg:"send fail" 4 !sent_received ;
@@ -1265,7 +1268,7 @@ let test_empty_matchers_local_only _ =
         ) >>= fun _ ->           
       return ()
     ) in           
-  Lwt.(Lwt_main.run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  Lwt.(safe_lwt_run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
   assert_bool "expected empty matchers exception did not occur" !expected_exception_happened;
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
 
@@ -1290,7 +1293,7 @@ let test_empty_matchers_remote_local _ =
       return ()
     ) in            
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       P.run_node node_config ~process:test_proc >>= fun () -> 
       (get_option !exit_fn) () >>= fun () ->
       assert_bool "expected empty matchers exception did not occur" !expected_exception_happened;   
@@ -1345,7 +1348,7 @@ let test_empty_matchers_remote_remote _ =
     ) in      
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->
       assert_bool "expected empty matchers exception did not occur" !expected_exception_happened;   
@@ -1373,7 +1376,7 @@ let test_raise_local_config _ =
       ] >>= fun _ ->            
       return ()        
     ) in             
-  Lwt.(Lwt_main.run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  Lwt.(safe_lwt_run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
   assert_bool "expceted exception did not occur" !expected_exception_happened ;
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections) ;
   assert_equal 0 (Hashtbl.length established_connections)    
@@ -1402,7 +1405,7 @@ let test_raise_local_remote_config _ =
       return ()        
     ) in        
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       P.run_node node_config ~process:test_proc >>= fun () -> 
       (get_option !exit_fn) () >>= fun () ->
       assert_bool "expceted exception did not occur" !expected_exception_happened ;  
@@ -1470,7 +1473,7 @@ let test_raise_remote_remote_config _ =
     ) in
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_bool "expceted exception did not occur" !expected_exception_happened ;  
@@ -1502,7 +1505,7 @@ let test_monitor_dead_process_local_local_config _ =
       ] >>= fun _ ->
       return ()        
     ) in             
-  Lwt.(Lwt_main.run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
+  Lwt.(safe_lwt_run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
   assert_bool "process was not spawned" (!result && !result_monitor <> None) ; 
   assert_equal ~msg:"did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;    
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
@@ -1535,7 +1538,7 @@ let test_monitor_dead_process_local_remote_config _ =
       return ()        
     ) in             
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       P.run_node node_config ~process:test_proc >>= fun () -> 
       (get_option !exit_fn) () >>= fun () ->
       assert_bool "process was not spawned" (!result && !result_monitor <> None) ;
@@ -1596,7 +1599,7 @@ let test_monitor_dead_process_remote_remote_config _ =
     ) in
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;      
@@ -1637,7 +1640,7 @@ let test_add_remove_remote_nodes_in_local_config _ =
       >>= fun _ ->
       return ()        
     ) in             
-  Lwt.(Lwt_main.run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
+  Lwt.(safe_lwt_run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
   assert_bool "add_remote_node should have throw Local_only_mode exception when running with a local only config" !add_pass ; 
   assert_bool "remove_remote_node should have throw Local_only_mode exception when running with a local only config" !remove_pass ;    
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
@@ -1724,7 +1727,7 @@ let test_add_remove_nodes_remote_config _ =
     ) in
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"remote nodes should have been empty before adding" 0 (List.length !remote_nodes_at_start) ;
@@ -1777,7 +1780,7 @@ let test_selective_receive_local_config _ =
       lift_io (Test_io.sleep 0.2) >>= fun () ->
       return () 
     ) in
-  Lwt.(Lwt_main.run (P.run_node node_config ~process:main_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  Lwt.(safe_lwt_run (P.run_node node_config ~process:main_proc >>= fun () -> (get_option !exit_fn) ())) ;
   assert_equal ~msg:"selective receive failed" (Some "the one") !selective_message ;
   assert_equal ~msg:"selective receive failed" ["0" ; "1" ; "2" ; "3" ; "4" ; "5"] !other_messages_inorder ;
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections) ;
@@ -1825,7 +1828,7 @@ let test_selective_receive_local_remote_config _ =
       return () 
     ) in
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       P.run_node node_config ~process:main_proc >>= fun () -> 
       (get_option !exit_fn) () >>= fun () ->
       assert_equal ~msg:"selective receive failed" (Some "the one") !selective_message ;
@@ -1888,7 +1891,7 @@ let test_selective_receive_remote_remote_config _ =
     ) in
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:receiver_proc) ;
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:main_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"selective receive failed" (Some "the one") !selective_message ;
@@ -1906,7 +1909,7 @@ let test_multiple_run_node _ =
   let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let exception_thrown = ref None in
 
-  Lwt.(Lwt_main.run (
+  Lwt.(safe_lwt_run (
       P.run_node node_config >>= fun () ->
       catch
         (fun () -> P.run_node node_config)
@@ -1934,7 +1937,7 @@ let test_get_remote_node_local_only _ =
           | Some _ -> nonexistent_remote_node_result := Some "fail" ; return ())
     ) in 
 
-  Lwt.(Lwt_main.run ((P.run_node node_config ~process:p)  >>= fun _ -> (get_option !exit_fn) ())) ;
+  Lwt.(safe_lwt_run ((P.run_node node_config ~process:p)  >>= fun _ -> (get_option !exit_fn) ())) ;
   assert_equal ~msg:"get_remote_node failed locally, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
   assert_equal ~msg:"get_remote_node failed locally, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
   assert_equal 0 (Hashtbl.length established_connections)
@@ -1961,7 +1964,7 @@ let test_get_remote_node_local_remote_config _ =
           | Some _ -> nonexistent_remote_node_result := Some "fail" ; return ())
     ) in 
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       (P.run_node node_config ~process:p)  >>= fun () -> 
       (get_option !exit_fn) () >>= fun () ->
       assert_equal ~msg:"get_remote_node failed locally with remote config, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
@@ -2030,7 +2033,7 @@ let test_get_remote_node_remote_remote_config _ =
 
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:p >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"get_remote_node failed remotely, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
@@ -2113,7 +2116,7 @@ let test_heart_beat _ =
 
   Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc ~node_monitor_fn:monitor_fn_consumer) ;
   Lwt.(
-    Lwt_main.run (
+    safe_lwt_run (
       Producer.run_node node_config ~process:p ~node_monitor_fn:monitor_fn_producer >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"test_heart_beat failed remotely, nodes at start should be of length 1 for consumer" 1 (List.length !node_at_start_consumer) ;
