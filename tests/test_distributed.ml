@@ -2216,11 +2216,8 @@ let lwt_reporter () =
 
 let _ =
   Logs.Src.set_level log_src (Some Logs.Debug) ;
-  Logs.set_reporter @@ lwt_reporter () ;
-  begin 
-    try let _ = run_test_tt_main suite in () 
-    with _ -> (assert_failure @@ "Encountered exception during test run : " ^ Printexc.get_backtrace ()) 
-  end ;
-  Unix.sleep 1
+  (* Logs.set_reporter @@ lwt_reporter () ; *)
+  try ignore @@ run_test_tt ~verbose:true suite ;
+  with _ -> (assert_failure @@ "Encountered exception during test run : " ^ Printexc.get_backtrace ())  
 
 (*BISECT-IGNORE-END*)
