@@ -18,14 +18,13 @@ let of_option (f : unit -> 'a) : 'a option =
     Some (f ())
   with _ -> None
 
-let pp_list ?first ?last ?sep (items : 'a list) (string_of_item : 'a -> string) : string =
-  let buff = Buffer.create 100 in
-  if first <> None then Buffer.add_string buff (get_option first) else () ;        
+let pp_list ?first ?last ?sep (items : 'a list) (string_of_item : 'a -> string) (formatter) : unit =
+  if first <> None then Format.fprintf formatter (get_option first) else () ;        
   List.iter 
-    (fun i -> 
-       Buffer.add_string buff @@ string_of_item i ;
-       if sep <> None then Buffer.add_string buff (get_option sep) else ()
+    (fun i ->
+       let s = string_of_item i in 
+       Format.fprintf formatter "%s" s ;
+       if sep <> None then Format.fprintf formatter (get_option sep) else ()
     ) 
     items ;    
-  if last <> None then Buffer.add_string buff (get_option last) else () ;
-  Buffer.contents buff
+  if last <> None then Format.fprintf formatter (get_option last) else () ;

@@ -273,9 +273,9 @@ let test_spawn_remote_remote_config _ =
       mres := mon_res ;
       return ()                   
     ) in
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;                
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->
       assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
@@ -401,9 +401,9 @@ let test_spawn_monitor_remote_remote_config _ =
       mres := mon_res ;  
       return ()                       
     ) in
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"termination monitor result not received" (Some "got normal termination") !result_monitor ;     
@@ -525,9 +525,9 @@ let test_monitor_remote_remote_config _ =
       ] >>= fun _ ->
       return ()                 
     ) in
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"monitor failed" (Some "got normal termination") !result_monitor ;      
@@ -654,9 +654,9 @@ let test_unmonitor_remote_remote_config _ =
       unmon_res := received ;     
       return ()                 
     ) in
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"unmonitor failed" None !unmon_res ;    
@@ -786,9 +786,9 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
       unmon_res := received ;
       return ()                  
     ) in
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"unmonitor failed" None !unmon_res ;       
@@ -876,9 +876,9 @@ let test_get_remote_nodes_remote_conifg _ =
       get_remote_nodes >>= fun nodes ->
       return (num_remote_nodes := (List.length nodes))                          
     ) in
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->
       assert_equal ~msg:"get remote nodes in remote config with 1 remote nodes should return 1" 1 !num_remote_nodes ;
@@ -1044,9 +1044,9 @@ let test_broadcast_remote_remote _ =
       in 
       receive_loop ()      
     ) in      
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->
       assert_equal ~msg:"broacast fail" 4 !broadcast_received ;
@@ -1240,9 +1240,9 @@ let test_send_remote_remote _ =
       in 
       receive_loop ()      
     ) in      
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->
       assert_equal ~msg:"send fail" 4 !sent_received ;
@@ -1346,9 +1346,9 @@ let test_empty_matchers_remote_remote _ =
         ) >>= fun _ ->           
       return ()       
     ) in      
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->
       assert_bool "expected empty matchers exception did not occur" !expected_exception_happened;   
@@ -1471,9 +1471,9 @@ let test_raise_remote_remote_config _ =
       ] >>= fun _ ->
       return ()                       
     ) in
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;                
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_bool "expceted exception did not occur" !expected_exception_happened ;  
@@ -1597,9 +1597,9 @@ let test_monitor_dead_process_remote_remote_config _ =
       ] >>= fun _ ->
       return ()                 
     ) in
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;      
@@ -1725,9 +1725,9 @@ let test_add_remove_nodes_remote_config _ =
           | _ -> assert false      
         )
     ) in
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;          
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"remote nodes should have been empty before adding" 0 (List.length !remote_nodes_at_start) ;
@@ -1889,9 +1889,9 @@ let test_selective_receive_remote_remote_config _ =
       lift_io (Test_io.sleep 0.2) >>= fun () ->
       return () 
     ) in
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:receiver_proc) ;
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:receiver_proc) ;  
       Producer.run_node node_config ~process:main_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"selective receive failed" (Some "the one") !selective_message ;
@@ -2031,9 +2031,9 @@ let test_get_remote_node_remote_remote_config _ =
              receive [termination_case (function _ -> return ())]) >>= fun _ -> return ())
     ) in 
 
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;  
       Producer.run_node node_config ~process:p >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"get_remote_node failed remotely, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
@@ -2114,9 +2114,9 @@ let test_heart_beat _ =
       return ()
     ) in 
 
-  Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc ~node_monitor_fn:monitor_fn_consumer) ;
   Lwt.(
     safe_lwt_run (
+      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc ~node_monitor_fn:monitor_fn_consumer) ;  
       Producer.run_node node_config ~process:p ~node_monitor_fn:monitor_fn_producer >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"test_heart_beat failed remotely, nodes at start should be of length 1 for consumer" 1 (List.length !node_at_start_consumer) ;
@@ -2216,7 +2216,7 @@ let lwt_reporter () =
 
 let _ =
   Logs.Src.set_level log_src (Some Logs.Debug) ;
-  (* Logs.set_reporter @@ lwt_reporter () ; *)
+  Logs.set_reporter @@ lwt_reporter () ;
   try ignore @@ run_test_tt ~verbose:true suite ;
   with _ -> (assert_failure @@ "Encountered exception during test run : " ^ Printexc.get_backtrace ())  
 

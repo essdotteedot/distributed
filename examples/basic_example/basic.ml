@@ -55,7 +55,7 @@ module L = struct
       let k' () =
         let write () = Lwt_io.write Lwt_io.stdout (app_flush ()) in
         let unblock () = over (); Lwt.return_unit in
-        Lwt.finalize write unblock |> Lwt.ignore_result;
+        Lwt.finalize write unblock |> ignore;
         k ()
       in
       reporter.Logs.report src level ~over:(fun () -> ()) k' msgf;
