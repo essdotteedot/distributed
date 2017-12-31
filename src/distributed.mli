@@ -294,7 +294,9 @@ module type Process = sig
 
   val unmonitor : monitor_ref -> unit t
   (** [unmonitor mref] will cause this process to stop monitoring the process which is referenced by [mref].
-      If the current process is not monitoring the process referenced by [mref] then [unmonitor] is a no-op.            
+      If the current process is not monitoring the process referenced by [mref] then [unmonitor] is a no-op. 
+      
+      If process being unmonitored as indicated by [monitor_ref] is resides on an unknown node then {!exception:InvalidNode} exception is raised.
   *) 
 
   val get_self_pid : Process_id.t t

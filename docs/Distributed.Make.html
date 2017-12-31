@@ -271,7 +271,10 @@ The configuration of a node. Can be one of <a href="Distributed.Process.html#TYP
 
 <pre><span id="VALunmonitor"><span class="keyword">val</span> unmonitor</span> : <code class="type"><a href="Distributed.Process.html#TYPEmonitor_ref">monitor_ref</a> -> unit <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">
 <code class="code">unmonitor mref</code> will cause this process to stop monitoring the process which is referenced by <code class="code">mref</code>.
-      If the current process is not monitoring the process referenced by <code class="code">mref</code> then <code class="code">unmonitor</code> is a no-op.<br>
+      If the current process is not monitoring the process referenced by <code class="code">mref</code> then <code class="code">unmonitor</code> is a no-op. 
+<p>
+
+      If process being unmonitored as indicated by <code class="code">monitor_ref</code> is resides on an unknown node then <a href="Distributed.Process.html#EXCEPTIONInvalidNode"><code class="code"><span class="constructor">Distributed</span>.<span class="constructor">Process</span>.<span class="constructor">InvalidNode</span></code></a> exception is raised.<br>
 </div>
 
 <pre><span id="VALget_self_pid"><span class="keyword">val</span> get_self_pid</span> : <code class="type"><a href="Distributed.Process_id.html#TYPEt">Distributed.Process_id.t</a> <a href="Distributed.Process.html#TYPEt">t</a></code></pre><div class="info ">

@@ -421,10 +421,22 @@ let test_monitor_local_local_config _ =
   let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let result = ref false in
   let result_monitor = ref None in  
+  let result_monitor2 = ref None in
+  let another_monitor_proc pid_to_monitor () = P.(
+    monitor pid_to_monitor >>= fun _ ->
+    receive [
+      termination_case
+        (function
+          | Normal _ -> return (result_monitor2 := Some "got normal termination")
+          | _ -> assert false
+        )
+    ] >>= fun _ -> return ()
+  ) in 
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_bool "Process should not have spawned yet" (not !result) ;
       spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
+      spawn local_node (another_monitor_proc new_pid) >>= fun _ ->
       monitor new_pid >>= fun _ ->
       receive [
         termination_case 
@@ -438,6 +450,7 @@ let test_monitor_local_local_config _ =
   Lwt.(safe_lwt_run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
   assert_bool "process was not spawned" (!result && !result_monitor <> None) ; 
   assert_equal ~msg:"monitor failed" (Some "got normal termination") !result_monitor ;    
+  assert_equal ~msg:"monitor 2 failed" (Some "got normal termination") !result_monitor2 ;    
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
 
 let test_monitor_local_remote_config _ =
@@ -451,11 +464,23 @@ let test_monitor_local_remote_config _ =
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let result = ref false in
-  let result_monitor = ref None in  
+  let result_monitor = ref None in
+  let result_monitor2 = ref None in
+  let another_monitor_proc pid_to_monitor () = P.(
+    monitor pid_to_monitor >>= fun _ ->
+    receive [
+      termination_case
+        (function
+          | Normal _ -> return (result_monitor2 := Some "got normal termination")
+          | _ -> assert false
+        )
+    ] >>= fun _ -> return ()
+  ) in   
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_bool "Process should not have spawned yet" (not !result) ;
       spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
+      spawn local_node (another_monitor_proc new_pid) >>= fun _ ->
       monitor new_pid >>= fun _ ->
       receive [
         termination_case 
@@ -472,6 +497,7 @@ let test_monitor_local_remote_config _ =
       (get_option !exit_fn) () >>= fun () ->
       assert_bool "process was not spawned" (!result && !result_monitor <> None) ;
       assert_equal ~msg:"monitor failed" (Some "got normal termination") !result_monitor ;      
+      assert_equal ~msg:"monitor 2 failed" (Some "got normal termination") !result_monitor2 ;      
       assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
       Hashtbl.fold (fun _ (pipes,_) _ -> close_pipes pipes >>= fun () -> return ()) established_connections (return ()) >>= fun () ->
       return @@ Hashtbl.clear established_connections    
@@ -505,7 +531,18 @@ let test_monitor_remote_remote_config _ =
         Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
       )
     ) in    
-  let result_monitor = ref None in    
+  let result_monitor = ref None in 
+  let result_monitor2 = ref None in 
+  let another_monitor_proc pid_to_monitor () = Producer.(
+    monitor pid_to_monitor >>= fun _ ->
+    receive [
+      termination_case
+        (function
+          | Normal _ -> return (result_monitor2 := Some "got normal termination")
+          | _ -> assert false
+        )
+    ] >>= fun _ -> return ()
+  ) in      
   let producer_proc () = Producer.(        
       return () >>= fun _ ->
       return (
@@ -514,7 +551,9 @@ let test_monitor_remote_remote_config _ =
         Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
       ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
+      get_self_node >>= fun local_node ->
       spawn (List.hd nodes) (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05)) >>= fun (remote_pid, _) ->
+      spawn local_node (another_monitor_proc remote_pid) >>= fun _ ->
       monitor remote_pid >>= fun _ ->      
       receive [
         termination_case 
@@ -531,6 +570,7 @@ let test_monitor_remote_remote_config _ =
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"monitor failed" (Some "got normal termination") !result_monitor ;      
+      assert_equal ~msg:"monitor 2 failed" (Some "got normal termination") !result_monitor2 ;      
       assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
       Hashtbl.fold (fun _ (pipes,_) _ -> close_pipes pipes >>= fun () -> return ()) established_connections (return ()) >>= fun () ->
       return @@ Hashtbl.clear established_connections 
@@ -544,10 +584,23 @@ let test_unmonitor_local_local_config _ =
   let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let result = ref false in
   let unmon_res = ref None in
+  let unmon_res2 = ref None in 
+  let another_monitor_proc pid_to_monitor () = P.(
+    monitor pid_to_monitor >>= fun mres ->
+    unmonitor mres >>= fun _ ->
+    receive ~timeout_duration:0.05 [
+      termination_case
+        (function
+          | Normal _ -> return (unmon_res2 := Some "got normal termination")
+          | _ -> assert false
+        )
+    ] >>= fun _ -> return ()
+  ) in     
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_bool "process should not have spawned yet" (not !result) ;
       spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
+      spawn local_node (another_monitor_proc new_pid) >>= fun _ ->
       monitor new_pid >>= fun mon_res ->
       unmonitor mon_res >>= fun () ->
       receive ~timeout_duration:0.05 [
@@ -563,6 +616,7 @@ let test_unmonitor_local_local_config _ =
   Lwt.(safe_lwt_run (P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
   assert_bool "process was not spawned" !result ;
   assert_equal ~msg:"unmonitor failed" None !unmon_res ;     
+  assert_equal ~msg:"unmonitor 2 failed" None !unmon_res2 ;     
   assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
 
 let test_unmonitor_local_remote_config _ =
@@ -577,10 +631,23 @@ let test_unmonitor_local_remote_config _ =
                              } in
   let result = ref false in
   let unmon_res = ref None in
+  let unmon_res2 = ref None in 
+  let another_monitor_proc pid_to_monitor () = P.(
+    monitor pid_to_monitor >>= fun mres ->
+    unmonitor mres >>= fun _ ->
+    receive ~timeout_duration:0.05 [
+      termination_case
+        (function
+          | Normal _ -> return (unmon_res2 := Some "got normal termination")
+          | _ -> assert false
+        )
+    ] >>= fun _ -> return ()
+  ) in     
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_bool "Process should not have spawned yet" (not !result) ;
       spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
+      spawn local_node (another_monitor_proc new_pid) >>= fun _ ->
       monitor new_pid >>= fun mon_res ->
       unmonitor mon_res >>= fun () ->
       receive ~timeout_duration:0.05 [
@@ -599,6 +666,7 @@ let test_unmonitor_local_remote_config _ =
       (get_option !exit_fn) () >>= fun () ->
       assert_bool "process was not spawned" !result ;  
       assert_equal ~msg:"unmonitor failed" None !unmon_res ;    
+      assert_equal ~msg:"unmonitor 2 failed" None !unmon_res2 ;    
       assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
       Hashtbl.fold (fun _ (pipes,_) _ -> close_pipes pipes >>= fun () -> return ()) established_connections (return ()) >>= fun () ->
       return @@ Hashtbl.clear established_connections    
@@ -633,6 +701,18 @@ let test_unmonitor_remote_remote_config _ =
       )
     ) in    
   let unmon_res = ref None in
+  let unmon_res2 = ref None in 
+  let another_monitor_proc pid_to_monitor () = Producer.(
+    monitor pid_to_monitor >>= fun mres ->
+    unmonitor mres >>= fun _ ->
+    receive ~timeout_duration:0.05 [
+      termination_case
+        (function
+          | Normal _ -> return (unmon_res2 := Some "got normal termination")
+          | _ -> assert false
+        )
+    ] >>= fun _ -> return ()
+  ) in     
   let producer_proc () = Producer.(      
       return () >>= fun _ ->
       return (
@@ -640,8 +720,10 @@ let test_unmonitor_remote_remote_config _ =
         Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
         Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
       ) >>= fun _ -> 
-      get_remote_nodes >>= fun nodes ->      
+      get_remote_nodes >>= fun nodes ->    
+      get_self_node >>= fun local_node ->  
       spawn (List.hd nodes) (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05)) >>= fun (remote_pid, _) ->
+      spawn local_node (another_monitor_proc remote_pid) >>= fun _ ->
       monitor remote_pid >>= fun mon_res ->      
       unmonitor mon_res >>= fun () ->
       receive ~timeout_duration:0.05 [
@@ -660,6 +742,7 @@ let test_unmonitor_remote_remote_config _ =
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       (get_option !exit_fn) () >>= fun () ->      
       assert_equal ~msg:"unmonitor failed" None !unmon_res ;    
+      assert_equal ~msg:"unmonitor 2 failed" None !unmon_res2 ;    
       assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
       Hashtbl.fold (fun _ (pipes,_) _ -> close_pipes pipes >>= fun () -> return ()) established_connections (return ()) >>= fun () ->
       return @@ Hashtbl.clear established_connections 
@@ -1363,10 +1446,16 @@ let test_empty_matchers_remote_remote _ =
 let test_raise_local_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Local {P.Local_config.node_name = "test" ;} in
-  let expected_exception_happened = ref false in  
+  let expected_exception_happened = ref false in 
+  let receive_exception_proc () = P.(
+    receive [
+      case (fun _ -> Some (fun () -> fail Test_ex) ) ;
+    ] >>= fun _ -> return ()
+  ) in
   let test_proc () = P.(                      
       get_self_node >>= fun local_node ->
-      spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> fail Test_ex) >>= fun (_, _) ->
+      spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> receive_exception_proc ()) >>= fun (new_pid, _) ->
+      new_pid >! "foobar" >>= fun _ ->
       receive [
         termination_case 
           (function
@@ -1391,10 +1480,16 @@ let test_raise_local_remote_config _ =
                                P.Remote_config.node_ip = "1.2.3.4" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in
-  let expected_exception_happened = ref false in  
+  let expected_exception_happened = ref false in 
+  let receive_exception_proc () = P.(
+    receive ~timeout_duration:0.05 [
+      case (fun _ -> Some (fun () -> fail Test_ex) ) ;
+    ] >>= fun _ -> return ()
+  ) in 
   let test_proc () = P.(                      
       get_self_node >>= fun local_node ->
-      spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> fail Test_ex) >>= fun (_, _) ->
+      spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> receive_exception_proc ()) >>= fun (new_pid, _) ->
+      new_pid >! "foobar" >>= fun _ ->
       receive [
         termination_case 
           (function
@@ -1447,6 +1542,11 @@ let test_raise_remote_remote_config _ =
         Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
       )
     ) in    
+  let receive_exception_proc () = Consumer.(
+      receive [
+        case (fun _ -> Some (fun () -> fail Test_ex) ) ;
+      ] >>= fun _ -> return ()
+    ) in 
   let producer_proc () = Producer.(
       return () >>= fun _ ->
       return (
@@ -1456,7 +1556,8 @@ let test_raise_remote_remote_config _ =
       ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
       get_self_pid >>= fun _ ->
-      spawn ~monitor:true (List.hd nodes) (Consumer.(fun () -> return () >>= fun () -> fail Test_ex)) >>= fun (_, _) ->      
+      spawn ~monitor:true (List.hd nodes) (Consumer.(fun () -> return () >>= fun () -> receive_exception_proc ())) >>= fun (remote_pid, _) ->      
+      remote_pid >! "foobar" >>= fun _ ->
       receive [
         termination_case 
           (function
@@ -1493,8 +1594,14 @@ let test_monitor_dead_process_local_local_config _ =
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_bool "Process should not have spawned yet" (not !result) ;
-      spawn local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (new_pid, _) ->
-      lift_io (Test_io.sleep 0.05) >>= fun () ->
+      spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (new_pid, _) ->
+      receive [
+        termination_case
+        (function
+          | Normal _ -> return @@ Some ()
+          | _ -> assert false
+        )
+      ] >>= fun _ ->
       monitor new_pid >>= fun _ ->
       receive [
         termination_case
@@ -1525,8 +1632,14 @@ let test_monitor_dead_process_local_remote_config _ =
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_bool "Process should not have spawned yet" (not !result) ;
-      spawn local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (new_pid, _) ->
-      lift_io (Test_io.sleep 0.05) >>= fun () ->
+      spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (new_pid, _) ->
+      receive [
+        termination_case
+        (function
+          | Normal _ -> return @@ Some ()
+          | _ -> assert false
+        )
+      ] >>= fun _ ->      
       monitor new_pid >>= fun _ ->
       receive [
         termination_case
@@ -1585,8 +1698,14 @@ let test_monitor_dead_process_remote_remote_config _ =
         Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
       ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
-      spawn (List.hd nodes) (fun () -> return () >>= fun () -> return ()) >>= fun (remote_pid, _) ->
-      lift_io (Test_io.sleep 0.05) >>= fun () ->
+      spawn ~monitor:true (List.hd nodes) (fun () -> return () >>= fun () -> return ()) >>= fun (remote_pid, _) ->
+      receive [
+        termination_case
+        (function
+          | Normal _ -> return @@ Some ()
+          | _ -> assert false
+        )
+      ] >>= fun _ ->
       monitor remote_pid >>= fun _ ->      
       receive [
         termination_case
@@ -2073,6 +2192,8 @@ let test_heart_beat _ =
   let node_at_03_milliseconds_producer = ref [] in
   let node_went_down_consumer = ref None in
   let node_went_down_producer = ref None in
+  let invalid_node_exception_spawn = ref None in
+  let invalid_node_exception_monitor = ref None in
 
   let monitor_fn_consumer n = Consumer.(
      return (node_went_down_consumer := Some (Distributed.Node_id.get_name n))
@@ -2093,7 +2214,9 @@ let test_heart_beat _ =
       lift_io (Test_io.sleep 0.15) >>= fun () ->
       get_remote_nodes >>= fun nodes_at_02 ->
       node_after_02_millseconds_consumer := nodes_at_02 ;
-      return ()
+      catch 
+        (fun () -> spawn (List.hd nodes_at_start) (fun () -> return () >>= fun _ -> return ()) >>= fun _ -> return ())
+        (function | InvalidNode _ -> return (invalid_node_exception_spawn := Some true) | _ -> assert false)      
     ) in  
 
   let p () = Producer.(      
@@ -2104,6 +2227,7 @@ let test_heart_beat _ =
         Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
       ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes_at_start ->
+      spawn ~monitor:true (List.hd nodes_at_start) (fun () -> lift_io (Test_io.sleep 0.05) >>= fun _ -> return ()) >>= fun (_,mref) -> 
       node_at_start_producer := nodes_at_start ; 
       lift_io (Test_io.sleep 0.15) >>= fun () -> 
       get_remote_nodes >>= fun nodes_at_015 ->
@@ -2111,7 +2235,9 @@ let test_heart_beat _ =
       lift_io (Test_io.sleep 0.15) >>= fun () ->
       get_remote_nodes >>= fun nodes_at_03 ->
       node_at_03_milliseconds_producer := nodes_at_03 ;
-      return ()
+      catch 
+        (fun () -> unmonitor @@ Potpourri.get_option mref)
+        (function | InvalidNode _ -> return (invalid_node_exception_monitor := Some true) | _ -> assert false)      
     ) in 
 
   Lwt.(
@@ -2126,6 +2252,8 @@ let test_heart_beat _ =
       assert_equal ~msg:"test_heart_beat failed remotely, nodes at 03 should be of length 0 for producer" 0 (List.length !node_at_03_milliseconds_producer) ;
       assert_equal ~msg:"test_heart_beat failed remotely, consumer node monitor function should have been called" (Some "producer") !node_went_down_consumer ;
       assert_equal ~msg:"test_heart_beat failed remotely, producer node monitor function should have been called" (Some "consumer") !node_went_down_producer ;
+      assert_equal ~msg:"test_heart_beat failed remotely, should have gotten InvalidNode exception when spawning on non-existent node" (Some true) !invalid_node_exception_spawn ;
+      assert_equal ~msg:"test_heart_beat failed remotely, should have gotten InvalidNode exception when monitoring on non-existent node" (Some true) !invalid_node_exception_monitor ;
       assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
       Hashtbl.fold (fun _ (pipes,_) _ -> close_pipes pipes >>= fun () -> return ()) established_connections (return ()) >>= fun () ->
       return @@ Hashtbl.clear established_connections 
@@ -2214,7 +2342,7 @@ let lwt_reporter log_it =
   in
   { Logs.report = report }  
 
-let log_it_stdout str_fn = Lwt_io.write Lwt_io.stdout @@str_fn ()
+let log_it_stdout str_fn = Lwt_io.write Lwt_io.stdout @@ str_fn
 
 let log_it_quiet _ = Lwt.return ()
 

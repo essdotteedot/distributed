@@ -519,7 +519,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     let log_msg' () =
       I.log level (fun () -> print_log_msg () ; str_of_log_bugger ())      
     in
-    I.catch log_msg' (fun _ -> I.return ()) (* if we get an error while logging then can't really do anything *)
+    I.catch log_msg' (fun _ -> I.return ()) (*BISECT-IGNORE*) (* if we get an error while logging then can't really do anything *)
 
   let safe_close_channel (ns : node_state) (ch : [`Out of I.output_channel | `In of I.input_channel]) 
       (action : string) (details : unit -> unit) : unit I.t =
@@ -1477,7 +1477,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     else
       begin
         initalised := true ;
-        let buff = Buffer.create 512 in
+        let buff = Buffer.create 1024 in
         match node_config with
         | Local local_config ->          
           let ns = { mailboxes                = Hashtbl.create 1000 ; 
