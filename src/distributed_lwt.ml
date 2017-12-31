@@ -62,7 +62,7 @@ module IO_LWT(L : CustomerLogger) = struct
     | Warning -> Logs.Warning
     | Error -> Logs.Error    
 
-  let log (level:level) (msg_fmtter:unit -> string) =
+  let log (level:level) (msg_fmtter:unit -> string) =    
     L.msg (of_logs_lwt_level level) (fun m -> m "%s" @@ msg_fmtter ()) >>= fun _ -> return ()        
 
   let shutdown_server = Lwt_io.shutdown_server

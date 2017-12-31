@@ -2196,7 +2196,7 @@ let suite = "Test Distributed" >::: [
   ]
 
 (* slightly modified version of reporter defined in Logs_lwt manual : http://erratique.ch/software/logs/doc/Logs_lwt.html#report_ex*)
-let lwt_reporter () =
+let lwt_reporter log_it =
   let buf_fmt () =
     let b = Buffer.create 512 in
     Format.formatter_of_buffer b, fun () -> let m = Buffer.contents b in Buffer.reset b; m
@@ -2205,7 +2205,7 @@ let lwt_reporter () =
   let reporter = Logs.format_reporter ~app ~dst:app () in
   let report src level ~over k msgf =
     let k' () =
-      let write () = Lwt_io.write Lwt_io.stdout (app_flush ()) in
+      let write () = log_it @@ app_flush () in
       let unblock () = over (); Lwt.return_unit in
       Lwt.finalize write unblock |> Lwt.ignore_result;
       k ()
@@ -2214,10 +2214,14 @@ let lwt_reporter () =
   in
   { Logs.report = report }  
 
+let log_it_stdout str_fn = Lwt_io.write Lwt_io.stdout @@str_fn ()
+
+let log_it_quiet _ = Lwt.return ()
+
 let _ =
   Logs.Src.set_level log_src (Some Logs.Debug) ;
-  Logs.set_reporter @@ lwt_reporter () ;
-  try ignore @@ run_test_tt ~verbose:true suite ;
+  Logs.set_reporter @@ lwt_reporter log_it_quiet ;
+  try ignore @@ run_test_tt ~verbose:false suite ;
   with _ -> (assert_failure @@ "Encountered exception during test run : " ^ Printexc.get_backtrace ())  
 
 (*BISECT-IGNORE-END*)
