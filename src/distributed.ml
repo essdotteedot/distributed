@@ -516,10 +516,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         | None -> ()
         | Some exn' -> Format.fprintf ns.log_formatter " [Exception : %s] [Backtrace : %s]" (Printexc.to_string exn') (backtrace_str ())                      
     in
-    let log_msg' () =
-      I.log level (fun () -> print_log_msg () ; str_of_log_bugger ())      
-    in
-    I.catch log_msg' (fun _ -> I.return ()) (*BISECT-IGNORE*) (* if we get an error while logging then can't really do anything *)
+    I.log level (fun () -> print_log_msg () ; str_of_log_bugger ())    
 
   let safe_close_channel (ns : node_state) (ch : [`Out of I.output_channel | `In of I.input_channel]) 
       (action : string) (details : unit -> unit) : unit I.t =
