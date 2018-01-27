@@ -1143,32 +1143,64 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     fun (ns,pid) ->
       let res : Node_id.t list = Node_id_hashtbl.fold (fun n _ acc -> n::acc) ns.remote_nodes [] in      
       I.return (ns,pid,res)
-
-  let node_server_fn (ns : node_state) (client_addr : Unix.sockaddr) ((in_ch,out_ch) : I.input_channel * I.output_channel) : unit I.t =
+  
+  let clean_up_node_connection ns node in_ch out_ch =
     let open I in
-    let remote_config = Potpourri.get_option !(ns.config) in
-    let node = ref None in    
+    let out_details () = 
+      if node <> None 
+      then 
+        begin
+          Format.fprintf ns.log_formatter "encountered error while closing output channel for remote node " ;
+          Node_id.print_string_of_node (Potpourri.get_option node) ns.log_formatter  
+        end
+      else Format.fprintf ns.log_formatter "encountered error while closing output channel" in
+    let in_details () = 
+      if node <> None 
+      then 
+        begin
+          Format.fprintf ns.log_formatter "encountered error while closing input channel for remote node " ;
+          Node_id.print_string_of_node (Potpourri.get_option node) ns.log_formatter
+        end
+      else Format.fprintf ns.log_formatter "encountered error while closing input channel" in
+    safe_close_channel ns (`In in_ch) "node connection clean up" out_details >>= fun () ->
+    safe_close_channel ns (`Out out_ch) "node connection clean up" in_details >>= fun () ->
+    if node = None then return () else return @@ Node_id_hashtbl.remove ns.remote_nodes (Potpourri.get_option node)        
 
-    let clean_up_fn () =
-      let out_details () = 
-        if !node <> None 
-        then 
-          begin
-            Format.fprintf ns.log_formatter "encountered error while closing output channel for remote node " ;
-            Node_id.print_string_of_node (Potpourri.get_option !node) ns.log_formatter  
-          end
-        else Format.fprintf ns.log_formatter "encountered error while closing output channel" in
-      let in_details () = 
-        if !node <> None 
-        then 
-          begin
-            Format.fprintf ns.log_formatter "encountered error while closing input channel for remote node " ;
-            Node_id.print_string_of_node (Potpourri.get_option !node) ns.log_formatter
-          end
-        else Format.fprintf ns.log_formatter "encountered error while closing input channel" in
-      safe_close_channel ns (`In in_ch) "node clean up" out_details >>= fun () ->
-      safe_close_channel ns (`Out out_ch) "node clean up" in_details >>= fun () ->
-      if !node = None then return () else return @@ Node_id_hashtbl.remove ns.remote_nodes (Potpourri.get_option !node) in
+  let rec wait_for_node_msg ns in_ch out_ch client_addr node_ref =
+    let open I in  
+    let print_string_of_client_addr () = 
+      match client_addr with
+      | Unix.ADDR_UNIX s -> Format.fprintf ns.log_formatter "%s" s
+      | Unix.ADDR_INET (ip,port) -> Format.fprintf ns.log_formatter "%s:%d" (Unix.string_of_inet_addr ip) port in
+  
+    read_value in_ch >>= fun (msg:message) -> 
+    log_msg ns Debug "node process message" 
+    (fun () -> 
+      Format.fprintf ns.log_formatter "received message " ;
+      print_string_of_message msg ns.log_formatter ;
+      Format.fprintf ns.log_formatter " from " ;
+      print_string_of_client_addr ()) >>= fun () ->
+    match msg with
+    | Node node -> 
+      begin
+        node_ref := Some node ;
+        Node_id_hashtbl.replace ns.remote_nodes node out_ch ;
+        if  (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes_heart_beats node) = None
+        then Node_id_hashtbl.replace ns.remote_nodes_heart_beats node false 
+        else () ;   
+        return node
+      end                  
+    | _ ->
+      log_msg ns Debug "node process message" 
+      (fun () -> 
+        Format.fprintf ns.log_formatter "ignore message " ;
+        print_string_of_message msg ns.log_formatter ;
+        Format.fprintf ns.log_formatter ", waiting for handshake") >>= fun () ->
+      wait_for_node_msg ns in_ch out_ch client_addr node_ref                                    
+    
+  let server_handler (ns : node_state) ((in_ch,out_ch) : I.input_channel * I.output_channel) (node : Node_id.t) : unit I.t =
+    let open I in
+    let remote_config = Potpourri.get_option !(ns.config) in    
 
     let spawn_preamble () =        
       let new_pid = Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port 
@@ -1182,7 +1214,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         begin            
           let receiver_not_found_err_msg () = 
             Format.fprintf ns.log_formatter "remote node " ; 
-            Node_id.print_string_of_node (Potpourri.get_option !node) ns.log_formatter ;
+            Node_id.print_string_of_node node ns.log_formatter ;
             Format.fprintf ns.log_formatter ", processed message " ;
             print_string_of_message msg ns.log_formatter ;
             Format.fprintf ns.log_formatter ", recipient unknown local process " ;
@@ -1194,9 +1226,9 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         return @@ push_fn (Some msg) in       
 
     let rec handler () = 
-      if (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes (Potpourri.get_option !node)) = None
+      if (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes node) = None
       then
-        let node_str () = Node_id.print_string_of_node (Potpourri.get_option !node) ns.log_formatter in 
+        let node_str () = Node_id.print_string_of_node node ns.log_formatter in 
         log_msg ns Error "node process message" 
           (fun () -> 
             Format.fprintf ns.log_formatter "remote node " ;
@@ -1210,15 +1242,15 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
              log_msg ns Debug "node process message" 
                (fun () -> 
                   Format.fprintf ns.log_formatter "remote node " ; 
-                  Node_id.print_string_of_node (Potpourri.get_option !node) ns.log_formatter ;
+                  Node_id.print_string_of_node node ns.log_formatter ;
                   Format.fprintf ns.log_formatter ", message " ;
                   print_string_of_message msg ns.log_formatter) >>= fun () ->
              match msg with
              | Node _ -> 
                handler ()            
              | Heartbeat ->
-               if (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes_heart_beats (Potpourri.get_option !node)) <> None
-               then Node_id_hashtbl.replace ns.remote_nodes_heart_beats (Potpourri.get_option !node) true 
+               if (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes_heart_beats node) <> None
+               then Node_id_hashtbl.replace ns.remote_nodes_heart_beats node true 
                else ();
                handler ()
              | Proc (p,sender_pid) ->
@@ -1300,64 +1332,45 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                  put_in_mailbox receiver_pid unmonres >>= fun () ->
                  handler ()
                end) 
-          (function e -> 
-             clean_up_fn () >>= fun () -> 
+          (fun e -> 
+              clean_up_node_connection ns (Some node) in_ch out_ch >>= fun () -> 
              log_msg ns ~exn:e Error "node process message" @@ 
              (fun () -> 
-                Format.fprintf ns.log_formatter "unexpected exception while processing messages for remote node "   ;
-                Node_id.print_string_of_node (Potpourri.get_option !node) ns.log_formatter)
-          ) in
-
-    let rec wait_for_node_msg () =
-      
-      let print_string_of_client_addr () = 
-        match client_addr with
-        | Unix.ADDR_UNIX s -> Format.fprintf ns.log_formatter "%s" s
-        | Unix.ADDR_INET (ip,port) -> Format.fprintf ns.log_formatter "%s:%d" (Unix.string_of_inet_addr ip) port in
-
-      catch
-        (fun () ->
-           read_value in_ch >>= fun (msg:message) -> 
-           log_msg ns Debug "node process message" 
-            (fun () -> 
-              Format.fprintf ns.log_formatter "received message " ;
-              print_string_of_message msg ns.log_formatter ;
-              Format.fprintf ns.log_formatter " from " ;
-              print_string_of_client_addr ()) >>= fun () ->
-           match msg with
-           | Node node' -> 
-             begin
-               node := Some node' ;
-               Node_id_hashtbl.replace ns.remote_nodes node' out_ch ;
-               if  (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes_heart_beats node') = None
-               then Node_id_hashtbl.replace ns.remote_nodes_heart_beats node' false 
-               else () ;
-               write_value out_ch (Node ns.local_node) >>= fun () ->                         
-               handler ()
-             end                  
-           | _ ->
-             begin
-               log_msg ns Debug "node process message" 
-               (fun () -> 
-                  Format.fprintf ns.log_formatter "ignore message " ;
-                  print_string_of_message msg ns.log_formatter ;
-                  Format.fprintf ns.log_formatter ", waiting for handshake") >>= fun () ->
-               wait_for_node_msg ()                 
-             end
-        )
-        (function e -> clean_up_fn () >>= fun () -> log_msg ns ~exn:e Error "node process message" (fun () -> Format.fprintf ns.log_formatter "unexpected exception")) in
-
-    wait_for_node_msg ()
-
-  let connect_to_remote_nodes_unsafe ?pid (ns : node_state) (remote_node : Node_id.t) (ip : string) (port : int) (name : string) (remote_sock_addr : Unix.sockaddr) : unit I.t =  
+                Format.fprintf ns.log_formatter "unexpected exception while processing messages for remote node " ;
+                Node_id.print_string_of_node node ns.log_formatter)
+          ) in    
+    handler ()
+  
+  let node_server_fn (ns : node_state) (client_addr : Unix.sockaddr) ((in_ch,out_ch) : I.input_channel * I.output_channel) : unit I.t =
     let open I in
+    let node_ref = ref None in
+    catch 
+      (fun () -> 
+        wait_for_node_msg ns in_ch out_ch client_addr node_ref >>= fun node -> 
+        write_value out_ch @@ Node (ns.local_node) >>= fun () ->
+        log_msg ns Debug "node process message" (fun () -> Format.fprintf ns.log_formatter "starting server handler") >>= fun _ ->
+        server_handler ns (in_ch,out_ch) node
+      )
+      (fun e -> 
+        clean_up_node_connection ns !node_ref in_ch out_ch >>= 
+        fun () -> log_msg ns ~exn:e Error "node process message" (fun () -> Format.fprintf ns.log_formatter "unexpected exception")
+      )        
+
+  let connect_to_remote_node ?pid (ns : node_state) (remote_node : Node_id.t) (ip : string) (port : int) (name : string) (remote_sock_addr : Unix.sockaddr) : unit I.t =  
+    let open I in
+    let node_ref = ref None in
     log_msg ns ?pid Debug "connecting to remote node" (fun () -> Format.fprintf ns.log_formatter "remote node %s:%d, name %s" ip port name) >>= fun () -> 
     open_connection remote_sock_addr >>= fun (in_ch,out_ch) ->
-    write_value out_ch @@ Node (ns.local_node) >>= fun () ->               
-    Node_id_hashtbl.replace ns.remote_nodes remote_node out_ch ;
-    Node_id_hashtbl.replace ns.remote_nodes_heart_beats remote_node false ;
-    async (fun () -> node_server_fn ns remote_sock_addr (in_ch,out_ch)) ;
-    log_msg ns Debug "connected to remote node" (fun () -> Format.fprintf ns.log_formatter "remote node %s:%d, name %s" ip port name) 
+    write_value out_ch @@ Node (ns.local_node) >>= fun () ->
+    log_msg ns ?pid Debug "connecting to remote node"       
+      (fun () -> 
+      Format.fprintf ns.log_formatter "sent message " ;
+      print_string_of_message (Node (ns.local_node)) ns.log_formatter ;
+      Format.fprintf ns.log_formatter " remote node %s:%d, name %s" ip port name ;
+      ) >>= fun () -> 
+    wait_for_node_msg ns in_ch out_ch remote_sock_addr node_ref >>= fun _ ->
+    log_msg ns Debug "connected to remote node" (fun () -> Format.fprintf ns.log_formatter "remote node %s:%d, name %s" ip port name) >>= fun () ->
+    return @@ async (fun () -> server_handler ns (in_ch,out_ch) remote_node)                                
 
   let add_remote_node (ip : string) (port : int) (name : string) : Node_id.t t =
     let open I in
@@ -1376,7 +1389,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
           log_msg ~pid:(Process_id.get_id pid) ns Warning "remote node already exists" (fun () -> Format.fprintf ns.log_formatter "%s:%d, name %s" ip port name) >>= fun () ->
           return (ns, pid, remote_node)
         else 
-          connect_to_remote_nodes_unsafe ns remote_node ip port name remote_sock_addr >>= fun () ->
+          connect_to_remote_node ns remote_node ip port name remote_sock_addr >>= fun () ->
           return (ns, pid, remote_node)
 
   let remove_remote_node  (node : Node_id.t) : unit t =
@@ -1400,15 +1413,8 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     | (ip,port,name)::rest ->
       let remote_sock_addr = Unix.ADDR_INET (Unix.inet_addr_of_string ip,port) in
       let remote_node = Node_id.make_remote_node ip port name in
-      catch 
-        (fun () ->
-           connect_to_remote_nodes_unsafe ns remote_node ip port name remote_sock_addr >>= fun () ->
-           connect_to_remote_nodes ns rest
-        )
-        (fun e ->
-           log_msg ns ~exn:e Error "connecting to remote nodes" (fun () -> Format.fprintf ns.log_formatter "unable to connect to remote node %s:%d" ip port) >>= fun () -> 
-           connect_to_remote_nodes ns rest
-        )
+      connect_to_remote_node ns remote_node ip port name remote_sock_addr >>= fun () ->
+      connect_to_remote_nodes ns rest                
 
   let rec send_heart_beats_fn (ns : node_state) (heart_beat_freq : float) : unit I.t =
     let open I in
@@ -1516,27 +1522,31 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             (fun () -> Format.fprintf ns.log_formatter "{Distributed library version : %s ; Threading implementation : [name : %s ; version : %s ; description : %s]}" 
                dist_lib_version lib_name lib_version lib_description) >>= fun () ->
           log_msg ns Info "node start up" (fun () -> Format.fprintf ns.log_formatter "remote mode with configuration of " ; print_string_of_config node_config ns.log_formatter) >>= fun () ->
-          connect_to_remote_nodes ns remote_config.Remote_config.remote_nodes >>= fun () ->
-          let local_sock_addr =  Unix.ADDR_INET (Unix.inet6_addr_any , remote_config.Remote_config.local_port) in
-          I.establish_server ~backlog:remote_config.Remote_config.connection_backlog local_sock_addr (node_server_fn ns) >>= fun (command_process_server) ->
-          async (fun () -> send_heart_beats_fn ns remote_config.Remote_config.heart_beat_frequency) ;
-          async (fun () -> process_remote_heart_beats_timeout_fn ns remote_config.Remote_config.heart_beat_timeout) ; 
-          at_exit (
-            fun () ->
-              log_msg ns Info "node shutting down" (fun () -> Format.fprintf ns.log_formatter "start clean up actions for remote mode with configuration of " ; print_string_of_config node_config ns.log_formatter) >>= fun () ->
-              Node_id_hashtbl.fold (fun _ out_ch _ -> safe_close_channel ns (`Out out_ch) "node shutting down" (fun () -> Format.fprintf ns.log_formatter "error while closing remote connection")) ns.remote_nodes (return ()) >>= fun () ->
-              catch (fun () -> shutdown_server command_process_server) (fun exn -> log_msg ns Warning ~exn "node shutting down" (fun () -> Format.fprintf ns.log_formatter "error while shutting down server")) >>= fun () ->
-              log_msg ns Info "node shutting down" (fun () -> Format.fprintf ns.log_formatter "finished clean up actions for remote mode with configuration of " ; print_string_of_config node_config ns.log_formatter)
+          I.catch 
+          (fun () ->
+            connect_to_remote_nodes ns remote_config.Remote_config.remote_nodes >>= fun () ->
+            let local_sock_addr =  Unix.ADDR_INET (Unix.inet6_addr_any , remote_config.Remote_config.local_port) in          
+            I.establish_server ~backlog:remote_config.Remote_config.connection_backlog local_sock_addr (node_server_fn ns) >>= fun command_process_server ->
+            async (fun () -> send_heart_beats_fn ns remote_config.Remote_config.heart_beat_frequency) ;
+            async (fun () -> process_remote_heart_beats_timeout_fn ns remote_config.Remote_config.heart_beat_timeout) ; 
+            at_exit (
+              fun () ->
+                log_msg ns Info "node shutting down" (fun () -> Format.fprintf ns.log_formatter "start clean up actions for remote mode with configuration of " ; print_string_of_config node_config ns.log_formatter) >>= fun () ->
+                Node_id_hashtbl.fold (fun _ out_ch _ -> safe_close_channel ns (`Out out_ch) "node shutting down" (fun () -> Format.fprintf ns.log_formatter "error while closing remote connection")) ns.remote_nodes (return ()) >>= fun () ->
+                catch (fun () -> shutdown_server command_process_server) (fun exn -> log_msg ns Warning ~exn "node shutting down" (fun () -> Format.fprintf ns.log_formatter "error while shutting down server")) >>= fun () ->
+                log_msg ns Info "node shutting down" (fun () -> Format.fprintf ns.log_formatter "finished clean up actions for remote mode with configuration of " ; print_string_of_config node_config ns.log_formatter)
               
-          );   
-          if process = None
-          then return ()
-          else 
-            begin
-              let new_pid = Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name in
-              Hashtbl.replace ns.mailboxes (Process_id.get_id new_pid) (I.create_stream ()) ; 
-              run_process' ns new_pid ((Potpourri.get_option process) ())
-            end             
+            );   
+            if process = None
+            then return ()
+            else 
+              begin
+                let new_pid = Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name in
+                Hashtbl.replace ns.mailboxes (Process_id.get_id new_pid) (I.create_stream ()) ; 
+                run_process' ns new_pid ((Potpourri.get_option process) ())
+              end             
+          )
+          (fun e -> log_msg ns Error ~exn:e "node start up" (fun () -> Format.fprintf ns.log_formatter "encountered exception during node startup"))
       end                              
 end    
 
