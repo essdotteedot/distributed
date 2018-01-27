@@ -2372,7 +2372,7 @@ let log_it_quiet _ = Lwt.return ()
 
 let _ =
   Logs.Src.set_level log_src (Some Logs.Debug) ;
-  Logs.set_reporter @@ lwt_reporter log_it_stdout ;
+  Logs.set_reporter @@ lwt_reporter log_it_quiet ;
   try ignore @@ run_test_tt ~verbose:false suite ;
   with _ -> (assert_failure @@ "Encountered exception during test run : " ^ Printexc.get_backtrace ())  
 
