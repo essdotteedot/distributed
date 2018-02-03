@@ -3,4 +3,4 @@
 (executables
  ((names (ping pong))
   (modes (native))
-  (libraries (distributed.lwt logs.lwt))))
+  (libraries (distributed-lwt logs.lwt))))

@@ -8,5 +8,5 @@
 (alias
  ((name    runtest)
   (deps    (test_distributed.exe))
-  (package distributed_lwt)
+  (package distributed-lwt)
   (action  (run ${<}))))

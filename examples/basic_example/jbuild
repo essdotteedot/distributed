@@ -3,4 +3,4 @@
 (executable
  ((name basic)
   (modes (native))
-  (libraries (distributed.lwt logs.lwt))))
+  (libraries (distributed-lwt logs.lwt))))

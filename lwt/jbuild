@@ -2,7 +2,7 @@
 
 (library
  ((name distributed_lwt)
-  (public_name distributed.lwt)
+  (public_name distributed-lwt)
   (synopsis "A lwt based implementation of Distributed.")  
   (wrapped false)  
   (libraries (distributed lwt lwt.unix logs.lwt))))  
