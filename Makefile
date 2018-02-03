@@ -1,4 +1,4 @@
-.PHONY : build clean test doc
+.PHONY : build clean test doc coverage test_all_ocaml
 
 build :	
 	jbuilder build --dev
