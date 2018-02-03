@@ -12,9 +12,8 @@ opam install bisect_ppx
 echo "Installing ocveralls"
 opam install ocveralls
 
-echo "Making coverage report"
+echo "Running test and making coverage report"
 make test
-make coverage
 
 echo "Uploading coverage report"
 ocveralls `find . -name 'bisect*.out'` --send
