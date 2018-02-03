@@ -14,9 +14,7 @@ build: [
 ]
 
 depends: [
-  "jbuilder"  {build & >= "1.0+beta16"}  
-  # remove following line before release
-  "bisect_ppx"
+  "jbuilder"  {build & >= "1.0+beta16"}    
 ]
 
 available: [ ocaml-version >= "4.02.3" ]
