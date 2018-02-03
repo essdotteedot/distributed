@@ -7,8 +7,7 @@ script:
   - bash -ex ./coverage.sh
 env:
   global:
-   - PINS="distributed:. distributed-lwt:."
-   - PRE_INSTALL_HOOK="opam install bisect_ppx && opam install ocveralls"
+   - PINS="distributed:. distributed-lwt:."   
   matrix:
     - OCAML_VERSION=4.02 PACKAGE=distributed-lwt
     - OCAML_VERSION=4.03 PACKAGE=distributed-lwt

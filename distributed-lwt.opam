@@ -21,6 +21,8 @@ depends: [
   "logs"
   "lwt" {>= "3.1.0"}     
   "ounit" {test & >= "2.0"}
+  # remove following line before release
+  "bisect_ppx"
 ]
 
 available: [ ocaml-version >= "4.02.3" ]
