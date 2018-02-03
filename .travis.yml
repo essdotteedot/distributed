@@ -6,11 +6,11 @@ script:
   - bash -ex .travis-opam.sh
 env:
   matrix:
-    - OCAML_VERSION=4.02 PACKAGE=distributed
-    - OCAML_VERSION=4.03 PACKAGE=distributed
-    - OCAML_VERSION=4.04 PACKAGE=distributed      
-    - OCAML_VERSION=4.05 PACKAGE=distributed      
-    - OCAML_VERSION=4.06 PACKAGE=distributed      
+    - OCAML_VERSION=4.02 PACKAGE=distributed-lwt
+    - OCAML_VERSION=4.03 PACKAGE=distributed-lwt
+    - OCAML_VERSION=4.04 PACKAGE=distributed-lwt      
+    - OCAML_VERSION=4.05 PACKAGE=distributed-lwt      
+    - OCAML_VERSION=4.06 PACKAGE=distributed-lwt      
 os:
   - linux
   - osx
