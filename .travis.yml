@@ -5,6 +5,8 @@ install:
 script: 
   - bash -ex .travis-opam.sh
 env:
+  global:
+    - PINS="distributed.dev:.
   matrix:
     - OCAML_VERSION=4.02 PACKAGE=distributed_lwt
     - OCAML_VERSION=4.03 PACKAGE=distributed_lwt
