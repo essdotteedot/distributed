@@ -8,12 +8,13 @@ script:
 env:
   global:
    - PINS="distributed:. distributed-lwt:."
+   - PRE_INSTALL_HOOK="opam install bisect_ppx && opam install ocveralls"
   matrix:
-    - OCAML_VERSION=4.02 PACKAGE=distributed-lwt EXTRA_DEPS="bisect_ppx ocveralls"
-    - OCAML_VERSION=4.03 PACKAGE=distributed-lwt EXTRA_DEPS="bisect_ppx ocveralls"
-    - OCAML_VERSION=4.04 PACKAGE=distributed-lwt EXTRA_DEPS="bisect_ppx ocveralls"     
-    - OCAML_VERSION=4.05 PACKAGE=distributed-lwt EXTRA_DEPS="bisect_ppx ocveralls"    
-    - OCAML_VERSION=4.06 PACKAGE=distributed-lwt EXTRA_DEPS="bisect_ppx ocveralls"    
+    - OCAML_VERSION=4.02 PACKAGE=distributed-lwt
+    - OCAML_VERSION=4.03 PACKAGE=distributed-lwt
+    - OCAML_VERSION=4.04 PACKAGE=distributed-lwt     
+    - OCAML_VERSION=4.05 PACKAGE=distributed-lwt    
+    - OCAML_VERSION=4.06 PACKAGE=distributed-lwt 
 os:
   - linux
   - osx
