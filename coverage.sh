@@ -3,8 +3,14 @@
 set -e
 set -x
 
-# assume that tests have been run and lib was built with instrumentation on
+echo "Installing bisect_ppx"
+opam install bisect_ppx
+
+echo "Installing ocveralls"
+opam install ocveralls
+
 echo "Making coverage report"
+make test
 make coverage
 
 echo "Uploading coverage report"

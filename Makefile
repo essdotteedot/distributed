@@ -1,12 +1,10 @@
-.PHONY : build clean test doc coverage test_all_ocaml
+.PHONY : build clean test doc test_all_ocaml
 
 build :	
 	jbuilder build --dev
 
 test : clean
 	jbuilder runtest
-
-coverage :
 	bisect-ppx-report -I _build/default/ -html _coverage/ `find . -name 'bisect*.out'`	
 
 clean :
