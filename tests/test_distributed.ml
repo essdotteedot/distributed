@@ -54,7 +54,7 @@ module Test_io = struct
 
   let lib_name = "Test_io"
 
-  let lib_version = "0.5.0"
+  let lib_version = "%%VERSION_NUM%%"
 
   let lib_description = "A Lwt based implementation that uses pipes instead of sockets for testing purposes"              
 

@@ -1,0 +1,6 @@
+(jbuild_version 1)
+
+(executables
+ ((names (add_client add_server name_server))
+  (modes (native))
+  (libraries (distributed.lwt logs.lwt))))

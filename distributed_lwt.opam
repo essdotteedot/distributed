@@ -1,0 +1,25 @@
+opam-version: "1.2"
+name: "distributed-lwt"
+version: "0.1.0"
+maintainer: "essdotteedot <essdotteedot@gmail.com>"
+authors: [ "essdotteedot <essdotteedot@gmail.com>" ]
+license: "MIT"
+homepage: "https://github.com/essdotteedot/distributed"
+dev-repo: "https://github.com/essdotteedot/distributed.git"
+bug-reports: "https://github.com/essdotteedot/distributed/issues"
+
+build: [
+  ["jbuilder" "subst" "-n" name] {pinned}
+  ["jbuilder" "build" "-p" name "-j" jobs]
+]
+
+build-test: [["jbuilder" "runtest" "-p" name "-j" jobs]]
+
+depends: [
+  "jbuilder"  {build & >= "1.0+beta17"}
+  "distributed"
+  "logs"
+  "lwt" {>= "3.1.0"}     
+]
+
+available: [ ocaml-version >= "4.02.3" ]

@@ -1,14 +1,10 @@
 language: c
 sudo: required
 install: 
-  - wget https://raw.githubusercontent.com/ocaml/ocaml-ci-scripts/master/.travis-opam.sh
-  - wget https://raw.githubusercontent.com/simonjbeaumont/ocaml-travis-coveralls/master/travis-coveralls.sh
+  - wget https://raw.githubusercontent.com/ocaml/ocaml-ci-scripts/master/.travis-opam.sh  
 script: 
   - bash -ex .travis-opam.sh
-  - if [ "$TRAVIS_OS_NAME" == "linux" ] && [ "$OCAML_VERSION" != 4.06 ]; then bash -ex travis-coveralls.sh; fi  
 env:
-  global:
-    - COV_CONF="./configure --enable-tests" 
   matrix:
     - OCAML_VERSION=4.02 PACKAGE=distributed
     - OCAML_VERSION=4.03 PACKAGE=distributed

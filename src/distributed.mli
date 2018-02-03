@@ -2,8 +2,8 @@
     Distributed comutations are described using the {!modtype:Process}. 
     {!modtype:Process} provides a monadic interface to describe distributed computations.
 
-    @author essdotteedot [<essdotteedot[at]gmail[dot]com>]
-    @version 0.5.0
+    @author essdotteedot <essdotteedot_at_gmail_dot_com>
+    @version %%VERSION_NUM%%
 *)
 
 (** Some nomenclature :

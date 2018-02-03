@@ -1,25 +1,11 @@
-*.annot
-*.cmo
-*.cma
-*.cmi
-*.a
-*.o
-*.cmx
-*.cmxs
-*.cmxa
-*.odocl
-
-# ocamlbuild working directory
-_build/
-
-# ocamlbuild targets
-*.byte
+_build
+_tests
+_coverage
+tmp
+*~
+\.\#*
+\#*#
+*.install
 *.native
-
-# oasis generated files
-setup.data
-setup.log
-
-distributed-api.docdir
-distributed.install
-travis-coveralls.sh
+*.byte
+*.merlin
