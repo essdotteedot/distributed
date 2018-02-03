@@ -16,10 +16,11 @@ build: [
 build-test: [["jbuilder" "runtest" "-p" name "-j" jobs]]
 
 depends: [
-  "jbuilder"  {build & >= "1.0+beta16"}
-  "distributed"
+  "jbuilder"  {build & >= "1.0+beta17"}
+  "distributed" {>= "0.5.0"}
   "logs"
   "lwt" {>= "3.1.0"}     
+  "oUnit" {test & >= "2.0"}
 ]
 
 available: [ ocaml-version >= "4.02.3" ]
