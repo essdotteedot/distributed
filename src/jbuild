@@ -4,6 +4,6 @@
  ((name distributed)
   (public_name distributed)
   (synopsis "Library to provide Erlang style distributed computations. This library is inspired by Cloud Haskell.")  
-  (wrapped false)))   
+  (wrapped false)   
   ; remember to remove this line before release 
-  ; (preprocess (pps (bisect_ppx)))))
+  (preprocess (pps (bisect_ppx)))))
