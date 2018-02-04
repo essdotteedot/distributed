@@ -5,9 +5,9 @@ exception Test_ex
 
 type server_handler = Unix.sockaddr -> (Lwt_io.input_channel * Lwt_io.output_channel) -> unit Lwt.t
 
-let established_connections : (Unix.sockaddr,(Lwt_io.input_channel * Lwt_io.output_channel) list * server_handler) Hashtbl.t = Hashtbl.create 10
+let established_connections : int ref = ref 0
 
-let exit_fn : (unit -> unit Lwt.t) option ref = ref None 
+let exit_fns : (unit -> unit Lwt.t) list ref = ref []
 
 let log_src = Logs.Src.create "distributed" ~doc:"logs events related to the distributed library"
 
@@ -16,22 +16,7 @@ module Log = (val Logs_lwt.src_log log_src : Logs_lwt.LOG)
 let get_option (v : 'a option) : 'a = 
   match v with
   | None -> assert false
-  | Some v' -> v'
-
-let pp_list ?first ?last ?sep (items : 'a list) (string_of_item : 'a -> string) : string =
-  let buff = Buffer.create 100 in
-  if first <> None then Buffer.add_string buff (get_option first) else () ;        
-  List.iter 
-    (fun i -> 
-       Buffer.add_string buff @@ string_of_item i ;
-       if sep <> None then Buffer.add_string buff (get_option sep) else ()
-    ) 
-    items ;    
-  if last <> None then Buffer.add_string buff (get_option last) else () ;
-  Buffer.contents buff
-
-let hashtbl_keys (table : ('a,'b) Hashtbl.t) : 'a list =
-  Hashtbl.fold (fun k _ acc -> k::acc) table []    
+  | Some v' -> v'    
 
 module Test_io = struct    
 
@@ -43,7 +28,7 @@ module Test_io = struct
 
   type output_channel = Lwt_io.output_channel
 
-  type server = unit
+  type server = Lwt_io.server
 
   type level = Debug 
              | Info
@@ -56,7 +41,7 @@ module Test_io = struct
 
   let lib_version = "%%VERSION_NUM%%"
 
-  let lib_description = "A Lwt based implementation that uses pipes instead of sockets for testing purposes"              
+  let lib_description = "A Lwt based test implementation that uses for testing purposes"              
 
   let return = Lwt.return
 
@@ -88,47 +73,17 @@ module Test_io = struct
     | Warning -> Logs.Warning
     | Error -> Logs.Error    
   
-  let sock_addr_of_client () =
-      (* bit of test hackery, the client nodes that call open_connection are always 1.2.3.4:100 in the tests,
-         we need to pass this address on to the server loop function
-      *)
-      Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4",100)
-
   let log (level:level) (msg_fmtter:unit -> string) =
     Log.msg (of_logs_lwt_level level) (fun m -> m "%s" @@ msg_fmtter ()) >>= fun _ -> return ()     
 
-  let string_of_sock_addr = function
-    | Unix.ADDR_UNIX s -> s
-    | Unix.ADDR_INET (inet_addr,port) -> Format.sprintf "%s:%d" (Unix.string_of_inet_addr inet_addr) port       
+  let open_connection sock_addr = Lwt_io.open_connection sock_addr
 
-  let open_connection sock_addr =
-    log Debug (fun () -> Format.sprintf "opening connection to %s"  (string_of_sock_addr sock_addr)) >>= fun _ ->
-    log Debug 
-      (fun () -> Format.sprintf "current establised connections : %s" 
-         (
-           let keys : Unix.sockaddr list = hashtbl_keys established_connections in
-           pp_list ~first:"[" ~last:"]" ~sep:"," keys (fun v -> string_of_sock_addr v)             
-         )
-      ) >>= fun _ -> 
-    let (conns,server_fn) = Hashtbl.find established_connections sock_addr in    
-    let new_in_ch0,new_out_ch0 = Lwt_io.pipe () in
-    let new_in_ch1,new_out_ch1 = Lwt_io.pipe () in    
-    Hashtbl.replace established_connections sock_addr ((new_in_ch1,new_out_ch1)::(new_in_ch0,new_out_ch0)::conns,server_fn) ; 
-    log Debug (fun () -> Format.sprintf "opened connection to %s" (string_of_sock_addr sock_addr)) >>= fun _ ->
-    async @@ (fun () -> server_fn (sock_addr_of_client ()) (new_in_ch0,new_out_ch1)) ;
-    return (new_in_ch1,new_out_ch0)
+  let establish_server ?backlog sock_addr server_fn = 
+    Lwt_io.establish_server_with_client_address ?backlog sock_addr server_fn >>= fun server ->
+    established_connections := !established_connections + 1 ;
+    Lwt.return server
 
-  let establish_server ?backlog sock_addr server_fn : server t =    
-    log Debug (fun () -> Format.sprintf "establised connection for %s" (string_of_sock_addr sock_addr)) >>= fun _ ->
-    Hashtbl.replace established_connections sock_addr ([],server_fn) ;
-    log Debug 
-      (fun () -> Format.sprintf "current establised connections : %s" 
-        (let keys : Unix.sockaddr list = hashtbl_keys established_connections in
-         pp_list ~first:"[" ~last:"]" ~sep:"," keys (fun v -> string_of_sock_addr v) 
-        )
-      )    
-
-  let shutdown_server (s : server) : unit t = return ()
+  let shutdown_server = Lwt_io.shutdown_server
 
   let sleep = Lwt_unix.sleep
 
@@ -136,7 +91,7 @@ module Test_io = struct
 
   let pick = Lwt.pick
 
-  let at_exit f = exit_fn := Some f 
+  let at_exit f = exit_fns := f::!exit_fns
 
 end
 
@@ -146,21 +101,17 @@ module M  = struct
   let string_of_message m = m  
 end
 
-let pipe_close p =
-  Lwt.catch (fun () -> Lwt_io.close p) (fun _ -> Lwt.return ())
-
-let rec close_pipes = function
-  | [] -> Lwt.return ()
-  | (in_ch,out_ch)::chs -> Lwt.(pipe_close in_ch >>= fun () -> pipe_close out_ch >>= fun () -> close_pipes chs)
-
 let test_run_wrapper lwt_exp =
   Lwt.(Lwt_main.run (
-        catch (fun () -> 
-          Hashtbl.fold (fun _ (pipes,_) _ -> close_pipes pipes >>= fun () -> return ()) established_connections (return ()) >>= fun () ->
-          Hashtbl.clear established_connections ;
-          lwt_exp ()
-        ) 
-        (fun e -> assert_failure @@ Format.sprintf "Test encountered exception %s, backtrace : %s" (Printexc.to_string e) (Printexc.get_backtrace ()))))
+    (* override the default asycn exception hook, because the default kills the process 
+       in the distributed lib, the async exception is only propageted after performing
+       clean up actions and in normal operation the process is excepted to be stopped
+       but for testing the process must go on
+    *)
+    async_exception_hook := (fun e -> ()) ; 
+    established_connections := 0 ; 
+    exit_fns := [] ; 
+    lwt_exp ()))         
 
 (* there is a lot of code duplication because ocaml currently does not support higher kinded polymorphism *)  
 
@@ -177,7 +128,7 @@ let test_return_bind _ =
     ) in             
   test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc) ;
   assert_equal ~msg:"return, bind failed" (Some 5) !result ;     
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections)
 
 (* spawn, spawn monitor tests for local and remote configurations *)
 
@@ -196,16 +147,16 @@ let test_spawn_local_local_config _ =
   test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc) ;
   assert_equal ~msg:"monitor result should have been None" None !mres ;
   assert_bool "process was not spawned" !result ;     
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections)
 
 let test_spawn_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.local_port = 45000 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
                                P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let result = ref false in
@@ -219,11 +170,11 @@ let test_spawn_local_remote_config _ =
     ) in             
   Lwt.(
     test_run_wrapper (fun () -> 
-      P.run_node node_config ~process:test_proc >>= fun () -> 
-      (get_option !exit_fn) () >>= fun () ->
+      P.run_node node_config ~process:test_proc >>= fun () ->       
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_bool "process was not spawned" !result ;
       assert_equal ~msg:"monitor result should have been none" None !mres ;    
-      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;  
+      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;  
       
       return ()
     )
@@ -233,42 +184,24 @@ let test_spawn_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
   let spawn_res = ref None in
   let mres = ref None in                                  
-  let consumer_proc () = Consumer.(
-      (* a bit of test hackery to get around the fact that the node will establish a connection on the loop back address
-         but we need an entry in the established_connections table with the external node address so that the producer can
-         connect to it
-      *)
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ;         
-      ) 
-    ) in    
   let producer_proc () = Producer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
       get_self_pid >>= fun pid_to_send_to ->
       assert_bool "process should not have spawned yet" (!spawn_res = None) ;
@@ -282,10 +215,10 @@ let test_spawn_remote_remote_config _ =
     ) in
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;                
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;                
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       assert_equal ~msg:"process did not spawn" (Some "spawned") !spawn_res ;
       
       return () 
@@ -312,21 +245,21 @@ let test_spawn_monitor_local_local_config _ =
       mres := mon_res ;  
       return ()        
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
   assert_bool "process was not spawned" (!result && !result_monitor <> None) ;
   assert_equal ~msg:"termination monitor result not received" (Some "got normal termination") !result_monitor ;     
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections) ;
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections) ;
   assert_bool "spawn monitor failed" (None <> !mres) ;
-  assert_equal 0 (Hashtbl.length established_connections)    
+  assert_equal 0 (!established_connections)    
 
 let test_spawn_monitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.local_port = 45000 ;
                                P.Remote_config.heart_beat_frequency = 200.0 ;
                                P.Remote_config.heart_beat_timeout = 500.0 ;
                                P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let result = ref false in
@@ -349,10 +282,10 @@ let test_spawn_monitor_local_remote_config _ =
   Lwt.(
     test_run_wrapper (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_bool "process was not spawned" (!result && !result_monitor <> None) ;
       assert_equal ~msg:"termination monitor result not received" (Some "got normal termination") !result_monitor ;     
-      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       assert_bool "spawn monitor failed" (None <> !mres) ;
       
       return ()    
@@ -363,38 +296,24 @@ let test_spawn_monitor_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
   let result_monitor = ref None in
   let mres = ref None in                                  
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
-      )
-    ) in    
   let producer_proc () = Producer.(      
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
       get_self_pid >>= fun pid_to_send_to ->
       spawn ~monitor:true (List.hd nodes) (fun () -> Consumer.send pid_to_send_to "spawned") >>= fun (_, mon_res) ->      
@@ -410,11 +329,11 @@ let test_spawn_monitor_remote_remote_config _ =
     ) in
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->      
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
       assert_equal ~msg:"termination monitor result not received" (Some "got normal termination") !result_monitor ;     
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       assert_bool "spawn monitor failed" (None <> !mres) ;
       
       return () 
@@ -454,20 +373,20 @@ let test_monitor_local_local_config _ =
       ] >>= fun _ ->
       return ()        
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
+  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
   assert_bool "process was not spawned" (!result && !result_monitor <> None) ; 
   assert_equal ~msg:"monitor failed" (Some "got normal termination") !result_monitor ;    
   assert_equal ~msg:"monitor 2 failed" (Some "got normal termination") !result_monitor2 ;    
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections)    
 
 let test_monitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.local_port = 45000 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
                                P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let result = ref false in
@@ -501,11 +420,11 @@ let test_monitor_local_remote_config _ =
   Lwt.(
     test_run_wrapper (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_bool "process was not spawned" (!result && !result_monitor <> None) ;
       assert_equal ~msg:"monitor failed" (Some "got normal termination") !result_monitor ;      
       assert_equal ~msg:"monitor 2 failed" (Some "got normal termination") !result_monitor2 ;      
-      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()    
     )
@@ -515,29 +434,21 @@ let test_monitor_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
-      )
-    ) in    
   let result_monitor = ref None in 
   let result_monitor2 = ref None in 
   let another_monitor_proc pid_to_monitor () = Producer.(
@@ -551,12 +462,6 @@ let test_monitor_remote_remote_config _ =
     ] >>= fun _ -> return ()
   ) in      
   let producer_proc () = Producer.(        
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
       get_self_node >>= fun local_node ->
       spawn (List.hd nodes) (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05)) >>= fun (remote_pid, _) ->
@@ -573,12 +478,12 @@ let test_monitor_remote_remote_config _ =
     ) in
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->      
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
       assert_equal ~msg:"monitor failed" (Some "got normal termination") !result_monitor ;      
       assert_equal ~msg:"monitor 2 failed" (Some "got normal termination") !result_monitor2 ;      
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -620,20 +525,20 @@ let test_unmonitor_local_local_config _ =
       unmon_res := received ;
       return ()        
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
+  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
   assert_bool "process was not spawned" !result ;
   assert_equal ~msg:"unmonitor failed" None !unmon_res ;     
   assert_equal ~msg:"unmonitor 2 failed" None !unmon_res2 ;     
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections)    
 
 let test_unmonitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.local_port = 45000 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
                                P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let result = ref false in
@@ -670,11 +575,11 @@ let test_unmonitor_local_remote_config _ =
   Lwt.(
     test_run_wrapper (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_bool "process was not spawned" !result ;  
       assert_equal ~msg:"unmonitor failed" None !unmon_res ;    
       assert_equal ~msg:"unmonitor 2 failed" None !unmon_res2 ;    
-      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()    
     )
@@ -684,29 +589,21 @@ let test_unmonitor_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
-      )
-    ) in    
   let unmon_res = ref None in
   let unmon_res2 = ref None in 
   let another_monitor_proc pid_to_monitor () = Producer.(
@@ -721,12 +618,6 @@ let test_unmonitor_remote_remote_config _ =
     ] >>= fun _ -> return ()
   ) in     
   let producer_proc () = Producer.(      
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->    
       get_self_node >>= fun local_node ->  
       spawn (List.hd nodes) (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05)) >>= fun (remote_pid, _) ->
@@ -745,12 +636,12 @@ let test_unmonitor_remote_remote_config _ =
     ) in
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->      
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
       assert_equal ~msg:"unmonitor failed" None !unmon_res ;    
       assert_equal ~msg:"unmonitor 2 failed" None !unmon_res2 ;    
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -780,19 +671,19 @@ let test_unmonitor_from_spawn_monitor_local_local_config _ =
       unmon_res := received ;
       return ()             
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
+  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
   assert_bool "Process was not spawned and monitored" (!result && !mres <> None) ;
   assert_equal ~msg:"unmonitor failed" None !unmon_res ;       
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections)    
 
 let test_unmonitor_from_spawn_monitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.local_port = 45000 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
                                P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let result = ref false in
@@ -817,10 +708,10 @@ let test_unmonitor_from_spawn_monitor_local_remote_config _ =
   Lwt.(
     test_run_wrapper (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_bool "Process was not spawned and monitored" (!result && !mres <> None) ;
       assert_equal ~msg:"unmonitor failed" None !unmon_res ;       
-      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()    
     )
@@ -830,38 +721,24 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
-      )
-    ) in   
   let mres = ref None in
   let unmon_res = ref None in 
   let producer_proc () = Producer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->      
       spawn ~monitor:true (List.hd nodes) (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05)) >>= fun (_, spawn_mon_res) ->
       mres := spawn_mon_res ;
@@ -878,11 +755,11 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
     ) in
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->      
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
       assert_equal ~msg:"unmonitor failed" None !unmon_res ;       
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -900,16 +777,16 @@ let test_get_remote_nodes_local_only _ =
     ) in             
   test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc) ;     
   assert_equal ~msg:"get remote nodes in local config should return 0" 0 !num_remote_nodes ;
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections)
 
 let test_get_remote_nodes_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.local_port = 45000 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
                                P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let num_remote_nodes = ref (-1) in
@@ -920,9 +797,9 @@ let test_get_remote_nodes_remote_local _ =
   Lwt.(
     test_run_wrapper (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_equal ~msg:"get remote nodes in remote config with no remote nodes should return 0" 0 !num_remote_nodes ;
-      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()
     )
@@ -932,47 +809,33 @@ let test_get_remote_nodes_remote_conifg _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
-      )
-    ) in
   let num_remote_nodes = ref (-1) in    
   let producer_proc () = Producer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
       return (num_remote_nodes := (List.length nodes))                          
     ) in
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_equal ~msg:"get remote nodes in remote config with 1 remote nodes should return 1" 1 !num_remote_nodes ;
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -1007,19 +870,19 @@ let test_broadcast_local_only _ =
       loop_back_received := recv_res ;            
       return ()
     ) in           
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
   assert_equal ~msg:"broacast failed" 2 !broadcast_received ;
   assert_equal ~msg:"broadcast message sent to originator" None !loop_back_received ;    
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections)
 
 let test_broadcast_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.local_port = 45000 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
                                P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let broadcast_received = ref 0 in 
@@ -1049,8 +912,8 @@ let test_broadcast_remote_local _ =
   Lwt.(
     test_run_wrapper (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      (get_option !exit_fn) () >>= fun () ->
-      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       assert_equal ~msg:"broacast fail" 2 !broadcast_received ; 
       assert_equal ~msg:"broadcast message sent to originator" None !loop_back_received ;     
       
@@ -1062,29 +925,21 @@ let test_broadcast_remote_remote _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
-      )
-    ) in
   let broadcast_received = ref 0 in
   let loop_back_received = ref None in                             
   let recv_proc to_send_pid () = Consumer.(        
@@ -1099,12 +954,6 @@ let test_broadcast_remote_remote _ =
       return ()      
     ) in      
   let producer_proc () = Producer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ ->
       get_self_node >>= fun local_node ->
       get_self_pid >>= fun my_pid ->
       spawn local_node (recv_proc my_pid) >>= fun _ ->
@@ -1136,12 +985,12 @@ let test_broadcast_remote_remote _ =
     ) in      
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_equal ~msg:"broacast fail" 4 !broadcast_received ;
       assert_equal ~msg:"broadcast message sent to originator" None !loop_back_received ;
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -1185,20 +1034,20 @@ let test_send_local_only _ =
       ] >>= fun _ ->           
       return ()
     ) in           
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
   assert_bool "spawn and monitor failed" (!mres <> None) ;
   assert_equal ~msg:"send failed" (Some "sent message") !received_message ;
   assert_bool "sending to invalid process should have succeeded" (not !send_failed) ;    
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)  
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections)  
 
 let test_send_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.local_port = 45000 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
                                P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in  
   let received_message = ref None in
@@ -1237,11 +1086,11 @@ let test_send_remote_local _ =
   Lwt.(
     test_run_wrapper (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_bool "spawn and monitor failed" (!mres <> None) ;
       assert_equal ~msg:"send failed" (Some "sent message") !received_message ;
       assert_bool "sending to invalid process should have succeeded" (not !send_failed) ;   
-      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()    
     )
@@ -1251,29 +1100,21 @@ let test_send_remote_remote _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
-      )
-    ) in
   let sent_received = ref 0 in
   let send_failed = ref false in                               
   let recv_proc to_send_pid () = Consumer.(        
@@ -1288,12 +1129,6 @@ let test_send_remote_remote _ =
       return ()      
     ) in      
   let producer_proc () = Producer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ ->
       get_self_node >>= fun local_node ->
       get_self_pid >>= fun my_pid ->
       spawn ~monitor:true local_node (recv_proc my_pid) >>= fun (pid1,_) ->
@@ -1332,12 +1167,12 @@ let test_send_remote_remote _ =
     ) in      
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_equal ~msg:"send fail" 4 !sent_received ;
       assert_bool "sending to invalid process should have succeeded" (not !send_failed) ;      
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -1358,18 +1193,18 @@ let test_empty_matchers_local_only _ =
         ) >>= fun _ ->           
       return ()
     ) in           
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
   assert_bool "expected empty matchers exception did not occur" !expected_exception_happened;
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections)
 
 let test_empty_matchers_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.local_port = 45000 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
                                P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in 
   let expected_exception_happened = ref false in        
@@ -1385,9 +1220,9 @@ let test_empty_matchers_remote_local _ =
   Lwt.(
     test_run_wrapper (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_bool "expected empty matchers exception did not occur" !expected_exception_happened;   
-      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return () 
     )
@@ -1397,37 +1232,23 @@ let test_empty_matchers_remote_remote _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
-      )
-    ) in
   let expected_exception_happened = ref false in    
   let producer_proc () = Producer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ ->
       catch 
         (fun () -> receive []) 
         (function
@@ -1438,11 +1259,11 @@ let test_empty_matchers_remote_remote _ =
     ) in      
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_bool "expected empty matchers exception did not occur" !expected_exception_happened;   
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -1472,19 +1293,19 @@ let test_raise_local_config _ =
       ] >>= fun _ ->            
       return ()        
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
   assert_bool "expceted exception did not occur" !expected_exception_happened ;
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections) ;
-  assert_equal 0 (Hashtbl.length established_connections)    
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections) ;
+  assert_equal 0 (!established_connections)    
 
 let test_raise_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.local_port = 45000 ;
                                P.Remote_config.heart_beat_frequency = 200.0 ;
                                P.Remote_config.heart_beat_timeout = 500.0 ;
                                P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let expected_exception_happened = ref false in 
@@ -1509,9 +1330,9 @@ let test_raise_local_remote_config _ =
   Lwt.(
     test_run_wrapper (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_bool "expceted exception did not occur" !expected_exception_happened ;  
-      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;  
+      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;  
       
       return ()    
     )
@@ -1525,42 +1346,28 @@ let test_raise_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
   let expected_exception_happened = ref false in                                 
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
-      )
-    ) in    
   let receive_exception_proc () = Consumer.(
       receive [
         case (fun _ -> Some (fun () -> fail Test_ex) ) ;
       ] >>= fun _ -> return ()
     ) in 
   let producer_proc () = Producer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
       get_self_pid >>= fun _ ->
       spawn ~monitor:true (List.hd nodes) (Consumer.(fun () -> return () >>= fun () -> receive_exception_proc ())) >>= fun (remote_pid, _) ->      
@@ -1581,11 +1388,11 @@ let test_raise_remote_remote_config _ =
     ) in
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;                
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;                
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->      
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
       assert_bool "expceted exception did not occur" !expected_exception_happened ;  
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;      
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;      
       
       return () 
     ) 
@@ -1619,19 +1426,19 @@ let test_monitor_dead_process_local_local_config _ =
       ] >>= fun _ ->
       return ()        
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
+  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
   assert_bool "process was not spawned" (!result && !result_monitor <> None) ; 
   assert_equal ~msg:"did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;    
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections)    
 
 let test_monitor_dead_process_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.local_port = 45000 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
                                P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let result = ref false in
@@ -1660,10 +1467,10 @@ let test_monitor_dead_process_local_remote_config _ =
   Lwt.(
     test_run_wrapper (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_bool "process was not spawned" (!result && !result_monitor <> None) ;
       assert_equal ~msg:"did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;      
-      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()    
     )
@@ -1673,37 +1480,23 @@ let test_monitor_dead_process_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
-      )
-    ) in    
   let result_monitor = ref None in    
   let producer_proc () = Producer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
       spawn ~monitor:true (List.hd nodes) (fun () -> return () >>= fun () -> return ()) >>= fun (remote_pid, _) ->
       receive [
@@ -1725,11 +1518,11 @@ let test_monitor_dead_process_remote_remote_config _ =
     ) in
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->      
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
       assert_equal ~msg:"did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;      
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -1766,10 +1559,10 @@ let test_add_remove_remote_nodes_in_local_config _ =
       >>= fun _ ->
       return ()        
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> (get_option !exit_fn) ()));
+  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
   assert_bool "add_remote_node should have throw Local_only_mode exception when running with a local only config" !add_pass ; 
   assert_bool "remove_remote_node should have throw Local_only_mode exception when running with a local only config" !remove_pass ;    
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections)    
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections)    
 
 (* test adding/removing nodes in remote configurations. *)
 
@@ -1777,28 +1570,21 @@ let test_add_remove_nodes_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [] ; (* start with with no node connections *)
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-      Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-      Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
-      lift_io @@ Test_io.sleep 0.1 (* sleep to let producer node add/remove consumer *)
-    ) in    
   let remote_nodes_at_start = ref [] in
   let remote_nodes_after_remove = ref [] in
   let remote_nodes_after_add = ref [] in   
@@ -1808,18 +1594,12 @@ let test_add_remove_nodes_remote_config _ =
   let expected_broadcast_exception = ref false in   
   let expected_send_exception = ref false in
   let producer_proc () = Producer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes ->
       remote_nodes_at_start := nodes ;
-      add_remote_node "5.6.7.8" 101 "consumer" >>= fun consumer_node ->
+      add_remote_node "127.0.0.1" 46000 "consumer" >>= fun consumer_node ->
       get_remote_nodes >>= fun nodes_after_add ->
       remote_nodes_after_add := nodes_after_add ;
-      add_remote_node "5.6.7.8" 101 "consumer" >>= fun _ ->
+      add_remote_node "127.0.0.1" 46000 "consumer" >>= fun _ ->
       get_remote_nodes >>= fun nodes_after_add_dup ->
       remote_nodes_after_dup_add := nodes_after_add_dup ;
       spawn consumer_node (fun () -> lift_io @@ Test_io.sleep 0.1) >>= fun (rpid,_) ->
@@ -1853,9 +1633,9 @@ let test_add_remove_nodes_remote_config _ =
     ) in
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;            
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->      
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
       assert_equal ~msg:"remote nodes should have been empty before adding" 0 (List.length !remote_nodes_at_start) ;
       assert_equal ~msg:"remote nodes should have 1 remote node after adding" 1 (List.length !remote_nodes_after_add) ;      
       assert_equal ~msg:"remote nodes should have 1 remote node after adding a dup" 1 (List.length !remote_nodes_after_dup_add) ;      
@@ -1864,7 +1644,7 @@ let test_add_remove_nodes_remote_config _ =
       assert_bool "expected InvalidNode exception did not occur when spawning on removed node" !expected_spawn_exception ;
       assert_bool "expected InvalidNode exception did not occur when broadcasting on removed node" !expected_broadcast_exception ;
       assert_bool "expected InvalidNode exception did not occur when sending message on removed node" !expected_send_exception ;            
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -1905,20 +1685,20 @@ let test_selective_receive_local_config _ =
       lift_io (Test_io.sleep 0.2) >>= fun () ->
       return () 
     ) in
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:main_proc >>= fun () -> (get_option !exit_fn) ())) ;
+  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:main_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
   assert_equal ~msg:"selective receive failed, candidate message" (Some "the one") !selective_message ;
   assert_equal ~msg:"selective receive failed, other messages" ["0" ; "1" ; "2" ; "3" ; "4" ; "5"] !other_messages_inorder ;
-  assert_equal ~msg:"local config should hav establised 0 connections" 0 (Hashtbl.length established_connections) ;
-  assert_equal 0 (Hashtbl.length established_connections)        
+  assert_equal ~msg:"local config should hav establised 0 connections" 0 (!established_connections) ;
+  assert_equal 0 (!established_connections)        
 
 let test_selective_receive_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.local_port = 45000 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
                                P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let selective_message = ref None in
@@ -1954,10 +1734,10 @@ let test_selective_receive_local_remote_config _ =
   Lwt.(
     test_run_wrapper (fun () -> 
       P.run_node node_config ~process:main_proc >>= fun () -> 
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_equal ~msg:"selective receive failed, candidate message" (Some "the one") !selective_message ;
       assert_equal ~msg:"selective receive failed, other messages" ["0" ; "1" ; "2" ; "3" ; "4" ; "5"] !other_messages_inorder ;
-      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()                      
     )
@@ -1967,31 +1747,24 @@ let test_selective_receive_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
   
   let messages_inorder = ref [] in 
                                                                             
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-      Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-      Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
-      return ()      
-    ) in 
   let receiver_proc result_pid () = Consumer.(
       let to_send = ref [] in
       let rec send_all msgs () =
@@ -2035,11 +1808,11 @@ let test_selective_receive_remote_remote_config _ =
     ) in
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;  
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;  
       Producer.run_node node_config ~process:main_proc >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->  
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->  
       assert_equal ~msg:"selective receive failed, other messages"  ["the one" ; "5" ; "4" ; "3" ; "2" ; "1" ; "0"] !messages_inorder ;
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return ()
     ) 
@@ -2058,10 +1831,10 @@ let test_multiple_run_node _ =
         (fun () -> P.run_node node_config)
         (function
           | P.Init_more_than_once -> exception_thrown := Some true ; return ()
-          | _ -> return ()) >>= fun () -> (get_option !exit_fn) ()
+          | _ -> return ()) >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())
     )) ;
   assert_equal ~msg:"Init more than once failed, did not get exception" (Some true) !exception_thrown ;
-  assert_equal 0 (Hashtbl.length established_connections) 
+  assert_equal 0 (!established_connections) 
 
 (* test get_remote_node*)
 
@@ -2080,19 +1853,19 @@ let test_get_remote_node_local_only _ =
           | Some _ -> nonexistent_remote_node_result := Some "fail" ; return ())
     ) in 
 
-  Lwt.(test_run_wrapper (fun () -> (P.run_node node_config ~process:p)  >>= fun _ -> (get_option !exit_fn) ())) ;
+  Lwt.(test_run_wrapper (fun () -> (P.run_node node_config ~process:p)  >>= fun _ -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
   assert_equal ~msg:"get_remote_node failed locally, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
   assert_equal ~msg:"get_remote_node failed locally, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
-  assert_equal 0 (Hashtbl.length established_connections)
+  assert_equal 0 (!established_connections)
 
 let test_get_remote_node_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 100 ;
+                               P.Remote_config.local_port = 45000 ;
                                P.Remote_config.heart_beat_frequency = 2.0 ;
                                P.Remote_config.heart_beat_timeout = 5.0 ;
                                P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "1.2.3.4" ;
+                               P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
                              } in
   let nonexistent_remote_node_result = ref (Some "") in
@@ -2109,7 +1882,7 @@ let test_get_remote_node_local_remote_config _ =
   Lwt.(
     test_run_wrapper (fun () -> 
       (P.run_node node_config ~process:p)  >>= fun () -> 
-      (get_option !exit_fn) () >>= fun () ->
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
       assert_equal ~msg:"get_remote_node failed locally with remote config, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
       assert_equal ~msg:"get_remote_node failed locally with remote config, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
       
@@ -2121,19 +1894,19 @@ let test_get_remote_node_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 200.0 ;
                                       Producer.Remote_config.heart_beat_timeout = 500.0 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 200.0 ;
                                         Consumer.Remote_config.heart_beat_timeout = 500.0 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
 
@@ -2141,26 +1914,11 @@ let test_get_remote_node_remote_remote_config _ =
   let self_remote_node_result = ref (Some "") in
   let exitent_remote_node_result = ref (Some "") in
 
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ; 
-      )
-    ) in  
-
   let p2 () = Consumer.(    
       exitent_remote_node_result := Some "ran" ; return ()    
     ) in 
 
   let p () = Producer.(      
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ -> 
       get_remote_node "test" >>= (function
           | None -> self_remote_node_result := Some "ran" ; return ()
           | Some _ -> self_remote_node_result := Some "fail" ; return ()) >>= fun () ->
@@ -2176,13 +1934,13 @@ let test_get_remote_node_remote_remote_config _ =
 
   Lwt.(
     test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc) ;  
+      Lwt.async (fun () -> Consumer.run_node remote_config) ;  
       Producer.run_node node_config ~process:p >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->      
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
       assert_equal ~msg:"get_remote_node failed remotely, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
       assert_equal ~msg:"get_remote_node failed remotely, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
       assert_equal ~msg:"get_remote_node failed remotely, existent node was not in remote nodes" (Some "ran") !exitent_remote_node_result ;
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -2193,19 +1951,19 @@ let test_heart_beat _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 100 ;
+                                      Producer.Remote_config.local_port = 45000 ;
                                       Producer.Remote_config.heart_beat_frequency = 0.3 ;
                                       Producer.Remote_config.heart_beat_timeout = 0.12 ;
                                       Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "1.2.3.4" ;
-                                      Producer.Remote_config.remote_nodes = [("5.6.7.8",101,"consumer")] ;
+                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
+                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 101 ;
+                                        Consumer.Remote_config.local_port = 46000 ;
                                         Consumer.Remote_config.heart_beat_frequency = 0.1 ;
                                         Consumer.Remote_config.heart_beat_timeout = 0.1 ;
                                         Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "5.6.7.8" ;
+                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
                                       } in
 
@@ -2229,9 +1987,6 @@ let test_heart_beat _ =
 
   let consumer_proc () = Consumer.(
       return () >>= fun _ ->
-      let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) in
-      Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 101)) ;
-      Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "5.6.7.8" , 101)) (conns,server_fn) ;
       lift_io (Test_io.sleep 0.05) >>= fun () -> (* sleep a little bit to allow for the producer to connect *)      
       get_remote_nodes >>= fun nodes_at_start ->
       node_at_start_consumer := nodes_at_start ;
@@ -2244,12 +1999,6 @@ let test_heart_beat _ =
     ) in  
 
   let p () = Producer.(      
-      return () >>= fun _ ->
-      return (
-        let (conns,server_fn) = Hashtbl.find established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) in
-        Hashtbl.remove established_connections (Unix.ADDR_INET (Unix.inet6_addr_any , 100)) ;
-        Hashtbl.replace established_connections (Unix.ADDR_INET (Unix.inet_addr_of_string "1.2.3.4" , 100)) (conns,server_fn) ; 
-      ) >>= fun _ -> 
       get_remote_nodes >>= fun nodes_at_start ->
       spawn ~monitor:true (List.hd nodes_at_start) (fun () -> lift_io (Test_io.sleep 0.05) >>= fun _ -> return ()) >>= fun (_,mref) -> 
       node_at_start_producer := nodes_at_start ; 
@@ -2268,7 +2017,7 @@ let test_heart_beat _ =
     test_run_wrapper (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc ~node_monitor_fn:monitor_fn_consumer) ;  
       Producer.run_node node_config ~process:p ~node_monitor_fn:monitor_fn_producer >>= fun () ->
-      (get_option !exit_fn) () >>= fun () ->      
+      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
       assert_equal ~msg:"test_heart_beat failed remotely, nodes at start should be of length 1 for consumer" 1 (List.length !node_at_start_consumer) ;
       assert_equal ~msg:"test_heart_beat failed remotely, nodes at start should be of length 1 for producer" 1 (List.length !node_at_start_producer) ;
       assert_equal ~msg:"test_heart_beat failed remotely, nodes at 015 should be of length 1 for producer" 1 (List.length !node_after_015_millseconds_producer) ;
@@ -2278,7 +2027,7 @@ let test_heart_beat _ =
       assert_equal ~msg:"test_heart_beat failed remotely, producer node monitor function should have been called" (Some "consumer") !node_went_down_producer ;
       assert_equal ~msg:"test_heart_beat failed remotely, should have gotten InvalidNode exception when spawning on non-existent node" (Some true) !invalid_node_exception_spawn ;
       assert_equal ~msg:"test_heart_beat failed remotely, should have gotten InvalidNode exception when monitoring on non-existent node" (Some true) !invalid_node_exception_monitor ;
-      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (Hashtbl.length established_connections) ;
+      assert_equal ~msg:"remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
