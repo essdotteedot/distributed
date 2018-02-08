@@ -3,8 +3,8 @@
 set -e
 set -x
 
-echo "Installing ounit"
-opam install ounit
+echo "Installing alcotest"
+opam install alcotest
 
 echo "Installing bisect_ppx"
 opam install bisect_ppx
