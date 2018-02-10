@@ -17,7 +17,10 @@ module M  = struct
   type t = Ping 
          | Pong
          | Var of [`End | `Noop]
-         | Incr of (int -> int)
+         (* If you are going to pass around functions/closure make sure you program is not composed of multiple executables
+            see https://caml.inria.fr/mantis/print_bug_page.php?bug_id=5942.
+         *)
+         | Incr of (int -> int) 
          | Incr_res of int
          | Raise
 

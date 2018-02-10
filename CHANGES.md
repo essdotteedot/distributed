@@ -1,12 +1,14 @@
 ## 0.5.0 (TBD)
 
-- Remove dependency on lwt_log use logs_lwt instead to ensure compatbility with  >= lwt 3.1.0 see #2. 
+- Remove dependency on lwt_log use logs_lwt instead to ensure compatibility with  >= lwt 3.1.0 see #2. 
 - Remove usage of Lwt.ignore_result see #3.
-- Ensure that on node startup if using a remote config then any remote nodes are connected to first before proceeding. Failure
+- Ensure that on node start up if using a remote config then any remote nodes are connected to first before proceeding. Failure
   to connected to any remote node in the config will cause the node to not start.
 - Move to using Jbuilder (using topkg jbuilder integration as well) instead of Oasis. The library will now appear as two
   packages on opam : distributed (the concurrent I/O agnostic core) and distributed-lwt the lwt based implementation.
 - Moved to using odoc to generate documentation.
+- Moved to using alcotest for unit testing instead of oUnit
+- Ensure compatibility with lwt >= 4.0.0 (safe semantics) #3
 
 ### 0.4.0 (2017-01-18)
 

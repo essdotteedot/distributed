@@ -98,6 +98,11 @@ module M  = struct
   let string_of_message m = m  
 end
 
+let get_option (v : 'a option) : 'a = 
+  match v with
+  | None -> assert false 
+  | Some v' -> v'
+
 let test_run_wrapper lwt_exp =
   Lwt.(Lwt_main.run (
     (* override the default asycn exception hook, because the default kills the process 
@@ -2004,7 +2009,7 @@ let test_heart_beat _ =
       get_remote_nodes >>= fun nodes_at_03 ->
       node_at_03_milliseconds_producer := nodes_at_03 ;
       catch 
-        (fun () -> unmonitor @@ Potpourri.get_option mref)
+        (fun () -> unmonitor @@ get_option mref)
         (function | InvalidNode _ -> return (invalid_node_exception_monitor := Some true) | _ -> assert false)      
     ) in 
 
