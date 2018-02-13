@@ -189,8 +189,6 @@ module type Process = sig
   module Remote_config : sig
     type t = { remote_nodes         : (string * int * string) list ; (** The initial list of remote nodes which this node can send messages to. A list of external ip address/port/node name triplets.*)
                local_port           : int                          ; (** The port that this node should run on. *)
-               heart_beat_timeout   : float                        ; (** The maximum amount of time in seconds to wait between heart beats from remote nodes before marking them as unavailable. *)
-               heart_beat_frequency : float                        ; (** The amount of time between sending hearts to nodes that are connected to this node. *) 
                connection_backlog   : int                          ; (** The the argument used when listening on a socket. *)
                node_name            : string                       ; (** The name of this node. *) 
                node_ip              : string                       ; (** The external ip address of this node. *)               
@@ -329,12 +327,10 @@ module type Process = sig
   val lift_io : 'a io -> 'a t
   (** [lift_io io] lifts the [io] computation into the process. *)
 
-  val run_node : ?process:(unit -> unit t) -> ?node_monitor_fn:(Node_id.t -> unit t) -> node_config -> unit io
+  val run_node : ?process:(unit -> unit t) -> node_config -> unit io
   (** [run_node process node_monitor_fn node_config] performs the necessary bootstrapping to start this 
-      node according to [node_config], then, if provided, runs the initial [process] returning the resulting [io]).
-      If [node_monitor_fn] is provided then whenever a remote node goes down (stop receiving heartbeats) the 
-      provided [node_monitor_fn] is called with the node that went down.
-
+      node according to [node_config]. If provided, runs the initial [process] returning the resulting [io].
+      
       If it's called more than once then an exception of {!exception:Init_more_than_once} is raised. 
   *)
 end

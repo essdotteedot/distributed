@@ -3,7 +3,7 @@
 (executable
  ((name test_distributed)
   (modes (native))
-  (libraries (distributed lwt lwt.unix logs.lwt alcotest))))
+  (libraries (distributed lwt lwt.unix logs.lwt))))
 
 (alias
  ((name    runtest)

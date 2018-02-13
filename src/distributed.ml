@@ -75,18 +75,16 @@ module Node_id_hashtbl = Hashtbl.MakeSeeded(Node_id_seeded_hash_type)
 
 module Process_id = struct
 
-  let next_process_id = ref 0
-
   type t = {node    : Node_id.t ; 
             proc_id : int ;                 
            }
 
   let make nid pid = {node = nid ; proc_id = pid}         
 
-  let make_local name = 
+  let make_local name next_process_id = 
     {node = Node_id.make_local_node name ; proc_id = Potpourri.post_incr next_process_id} 
 
-  let make_remote ipStr port name =
+  let make_remote ipStr port name next_process_id =
     {node = Node_id.make_remote_node ipStr port name ; proc_id = Potpourri.post_incr next_process_id}
 
   let is_local {node ; _} local_node = Node_id.is_local node local_node     
@@ -225,8 +223,6 @@ module type Process = sig
   module Remote_config : sig
     type t = { remote_nodes         : (string * int * string) list ;
                local_port           : int                          ;
-               heart_beat_timeout   : float                        ;
-               heart_beat_frequency : float                        ;
                connection_backlog   : int                          ;  
                node_name            : string                       ;
                node_ip              : string                       ;               
@@ -283,7 +279,7 @@ module type Process = sig
 
   val lift_io : 'a io -> 'a t    
 
-  val run_node : ?process:(unit -> unit t) -> ?node_monitor_fn:(Node_id.t -> unit t) -> node_config -> unit io
+  val run_node : ?process:(unit -> unit t) -> node_config -> unit io
 
 end
 
@@ -310,8 +306,6 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
   module Remote_config = struct
     type t = { remote_nodes         : (string * int * string) list ;
                local_port           : int                          ;
-               heart_beat_timeout   : float                        ;
-               heart_beat_frequency : float                        ;
                connection_backlog   : int                          ;  
                node_name            : string                       ;
                node_ip              : string                       ;               
@@ -330,7 +324,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     type t = monitor_ref
 
     let compare (Monitor_Ref (id1,_,_) : t) (Monitor_Ref (id2,_,_) : t) : int = 
-      compare id1 id2
+      id1 - id2
   end                 
 
   module Monitor_ref_set = Set.Make(Monitor_ref_order_type)  
@@ -340,7 +334,6 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
                | Proc of unit t * Process_id.t                                       (* the process to be spawned elsewhere and the process that requested the spawning *)
                | Spawn_monitor of unit t * Process_id.t * Process_id.t               (* the process to be spawned elsewhere, the monitoring process and the process that requested the spawning.*)
                | Node of Node_id.t                                                   (* initial message sent to remote node to identify ourselves *)
-               | Heartbeat                                                           (* heartbeat message *)
                | Exit of Process_id.t * monitor_reason                               (* process that was being monitored and the reason for termination *)
                | Monitor of Process_id.t * Process_id.t * Process_id.t               (* the process doing the monitoring and the id of the process to be monitored and the process that requested the monitoring *)
                | Unmonitor of monitor_ref * Process_id.t                             (* process to unmonitor and the process that requested the unmonitor *)
@@ -351,17 +344,16 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
   and node_state = { mailboxes                : (int, message I.stream * (message option -> unit)) Hashtbl.t ; 
                      remote_nodes             : I.output_channel Node_id_hashtbl.t ;
-                     remote_nodes_heart_beats : bool Node_id_hashtbl.t ;
                      monitor_table            : Monitor_ref_set.t Process_id_hashtbl.t ;
                      local_node               : Node_id.t ;
                      monitor_ref_id           : int ref ;
                      config                   : Remote_config.t option ref ;
-                     node_mon_fn              : (Node_id.t -> unit t) option ;
                      log_buffer               : Buffer.t ;
                      log_formatter            : Format.formatter ;
                      est_in_ch                : I.input_channel option ref ; (* input channel from calling I.establish_server, store here so we can close when server exits*)
                      est_out_ch               : I.output_channel option ref ; (* output_channel channel from calling I.establish_server, store here so we can close when server exits*)
                      node_server              : I.server option ref ; (* the server from calling I.establish_server, store here so we can close listening socket when server exits *)                                          
+                     next_process_id          : int ref ;
                    }                   
 
   and 'a t = (node_state * Process_id.t) -> (node_state * Process_id.t * 'a) io                    
@@ -445,8 +437,6 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       Format.fprintf formatter "Node " ; 
       Node_id.print_string_of_node nid formatter ;
     end
-    | Heartbeat -> 
-      Format.fprintf formatter "Heartbeat" ;
     | Exit (pid,mreason) -> 
     begin
       Format.fprintf formatter "Exit : {exit pid : " ;
@@ -521,9 +511,9 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       begin
         Format.fprintf formatter "{node type : remote ; remote nodes : " ;        
         print_remote_nodes () ; 
-        Format.fprintf formatter " ; local port : %d ; heart beat time out : %f ;heart beat frequency : %f ; \
-        connection backlog : %d ; node name : %s ; node ip : %s}" r.Remote_config.local_port r.Remote_config.heart_beat_timeout 
-        r.Remote_config.heart_beat_frequency r.Remote_config.connection_backlog r.Remote_config.node_name r.Remote_config.node_ip
+        Format.fprintf formatter " ; local port : %d ; connection backlog : %d ; \
+        node name : %s ; node ip : %s}" r.Remote_config.local_port 
+        r.Remote_config.connection_backlog r.Remote_config.node_name r.Remote_config.node_ip
       end
 
   let log_msg (ns : node_state) (level:I.level) ?exn (action : string) ?pid (details : unit -> unit) : unit I.t =
@@ -700,7 +690,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
     let open I in
     let remote_config = Potpourri.get_option !(ns.config) in
     let new_pid = Process_id.make_remote remote_config.Remote_config.node_ip
-        remote_config.Remote_config.local_port remote_config.Remote_config.node_name in
+        remote_config.Remote_config.local_port remote_config.Remote_config.node_name ns.next_process_id in
     let new_mailbox,push_fn = I.create_stream () in 
     Hashtbl.replace ns.mailboxes (Process_id.get_id new_pid) (new_mailbox,push_fn) ;
     let msg_to_send = msg_create_fn new_pid in
@@ -752,10 +742,10 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
   let make_new_pid (node_to_spwan_on : Node_id.t) (ns : node_state) : Process_id.t =
     if !(ns.config) = None 
-    then Process_id.make_local (Node_id.get_name node_to_spwan_on) 
+    then Process_id.make_local (Node_id.get_name node_to_spwan_on) ns.next_process_id 
     else
       let remote_config = Potpourri.get_option !(ns.config) in 
-      Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name   
+      Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name ns.next_process_id   
 
   let spawn ?(monitor=false) (node_id : Node_id.t) (p : (unit -> unit t)) : (Process_id.t * monitor_ref option) t =
     let open I in 
@@ -1246,9 +1236,6 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       begin
         node_ref := Some node ;
         Node_id_hashtbl.replace ns.remote_nodes node out_ch ;
-        if  (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes_heart_beats node) = None
-        then Node_id_hashtbl.replace ns.remote_nodes_heart_beats node false 
-        else () ;   
         return node
       end                  
     | _ ->
@@ -1265,7 +1252,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
     let spawn_preamble () =        
       let new_pid = Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port 
-          remote_config.Remote_config.node_name in
+          remote_config.Remote_config.node_name ns.next_process_id in
       Hashtbl.replace ns.mailboxes (Process_id.get_id new_pid) (I.create_stream ()) ;        
       new_pid in 
 
@@ -1309,11 +1296,6 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         match msg with
         | Node _ -> 
           handler ()            
-        | Heartbeat ->
-          if (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes_heart_beats node) <> None
-          then Node_id_hashtbl.replace ns.remote_nodes_heart_beats node true 
-          else ();
-          handler ()
         | Proc (p,sender_pid) ->
           begin
             let result_pid = spawn_preamble () in                   
@@ -1470,7 +1452,6 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       else
         log_msg ~pid:(Process_id.get_id pid) ns Debug "removing remote node" (fun () -> Format.fprintf ns.log_formatter "remote node : " ; Node_id.print_string_of_node node ns.log_formatter) >>= fun () ->
         Node_id_hashtbl.remove ns.remote_nodes node ;
-        Node_id_hashtbl.remove ns.remote_nodes_heart_beats node ;
         return (ns,pid, ())                
 
   let rec connect_to_remote_nodes (ns : node_state) (nodes : (string * int * string) list) : unit io =
@@ -1481,66 +1462,9 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       let remote_sock_addr = Unix.ADDR_INET (Unix.inet_addr_of_string ip,port) in
       let remote_node = Node_id.make_remote_node ip port name in
       connect_to_remote_node ns remote_node ip port name remote_sock_addr >>= fun () ->
-      connect_to_remote_nodes ns rest                
+      connect_to_remote_nodes ns rest                    
 
-  let rec send_heart_beats_fn (ns : node_state) (heart_beat_freq : float) : unit I.t =
-    let open I in
-    let safe_send node out_ch () =
-      catch 
-        (fun () ->
-           log_msg ns Debug "sending heartbeat" (fun () -> Format.fprintf ns.log_formatter "to node " ; Node_id.print_string_of_node node ns.log_formatter) >>= fun () ->
-           write_value out_ch Heartbeat
-        )
-        (fun e -> 
-           log_msg ns ~exn:e Error "sending heartbeat" 
-           (fun () -> 
-            Format.fprintf ns.log_formatter "failed for node " ;
-            Node_id.print_string_of_node node ns.log_formatter ;
-            Format.fprintf ns.log_formatter ", removing remote node") >>= fun () ->
-           return @@ Node_id_hashtbl.remove ns.remote_nodes node                
-        ) 
-    in
-    sleep heart_beat_freq >>= fun () ->
-    Node_id_hashtbl.iter (fun node out_ch -> async @@ safe_send node out_ch) ns.remote_nodes ;
-    send_heart_beats_fn ns heart_beat_freq
-
-  let rec process_remote_heart_beats_timeout_fn (ns : node_state) (heat_beat_timeout : float) : unit I.t =
-    let open I in
-    sleep heat_beat_timeout >>= fun () ->
-    Node_id_hashtbl.iter 
-      (fun node recvd_hear_beat ->
-         if (not recvd_hear_beat) 
-         then 
-           match (Potpourri.of_option @@ fun () -> Node_id_hashtbl.find ns.remote_nodes node) with
-           | None -> ()
-           | Some _ ->              
-             Node_id_hashtbl.remove ns.remote_nodes node ;                                
-             async 
-               (fun () ->
-                  log_msg ns Debug "node heartbeat process" 
-                    (fun () -> 
-                      Format.fprintf ns.log_formatter "failed to receive heartbeat in time from node " ; 
-                      Node_id.print_string_of_node node ns.log_formatter ;
-                      Format.fprintf ns.log_formatter " in time, removing remote node") >>= fun () ->                    
-                  match ns.node_mon_fn with
-                  | None -> return ()
-                  | Some f ->
-                    catch 
-                      (fun () -> (f node) (ns,make_new_pid ns.local_node ns) >>= fun _ -> return ())
-                      (fun e -> log_msg ns ~exn:e Error "node heartbeat process" 
-                          (fun () -> 
-                            Format.fprintf ns.log_formatter "encountered error while running node monitor function for remote node " ; 
-                            Node_id.print_string_of_node node ns.log_formatter ;
-                            Format.fprintf ns.log_formatter " after heat beat not received in time"))                    
-               )               
-         else ()
-      ) 
-      ns.remote_nodes_heart_beats ;
-    Node_id_hashtbl.clear ns.remote_nodes_heart_beats ;
-    Node_id_hashtbl.iter (fun node _ -> Node_id_hashtbl.replace ns.remote_nodes_heart_beats node false) ns.remote_nodes ;    
-    process_remote_heart_beats_timeout_fn ns heat_beat_timeout  
-
-  let run_node ?process ?node_monitor_fn (node_config : node_config) : unit io =
+  let run_node ?process (node_config : node_config) : unit io =
     let open I in
     if !initalised
     then fail Init_more_than_once
@@ -1552,17 +1476,16 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
         | Local local_config ->          
           let ns = { mailboxes                = Hashtbl.create 1000 ; 
                      remote_nodes             = Node_id_hashtbl.create ~random:true 10 ;
-                     remote_nodes_heart_beats = Node_id_hashtbl.create ~random:true 10 ;
                      monitor_table            = Process_id_hashtbl.create ~random:true 1000 ;
                      local_node               = Node_id.make_local_node local_config.Local_config.node_name ; 
                      monitor_ref_id           = ref 0 ;
                      config                   = ref None ;
-                     node_mon_fn              = node_monitor_fn ;
                      log_buffer               = buff ;
                      log_formatter            = Format.formatter_of_buffer buff ;
                      est_in_ch                = ref None ;
                      est_out_ch               = ref None ;
-                     node_server              = ref None ;                     
+                     node_server              = ref None ;
+                     next_process_id          = ref 0 ;                     
                    } in
           log_msg ns Info "node start up" 
             (fun () -> Format.fprintf ns.log_formatter "{Distributed library version : %s ; Threading implementation : [name : %s ; version : %s ; description : %s]}" 
@@ -1572,24 +1495,23 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
           then return ()
           else 
             begin
-              let new_pid = Process_id.make_local local_config.Local_config.node_name in
+              let new_pid = Process_id.make_local local_config.Local_config.node_name ns.next_process_id in
               Hashtbl.replace ns.mailboxes (Process_id.get_id new_pid) (I.create_stream ()) ; 
               run_process' ns new_pid ((Potpourri.get_option process) ())
             end 
         | Remote remote_config ->
           let ns = { mailboxes                = Hashtbl.create 1000 ; 
                      remote_nodes             = Node_id_hashtbl.create ~random:true 10 ;
-                     remote_nodes_heart_beats = Node_id_hashtbl.create ~random:true 10 ;
                      monitor_table            = Process_id_hashtbl.create ~random:true 1000 ;
                      local_node               = Node_id.make_remote_node remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name ; 
                      monitor_ref_id           = ref 0 ;
                      config                   = ref (Some remote_config) ;
-                     node_mon_fn              = node_monitor_fn ;
                      log_buffer               = buff ;
                      log_formatter            = Format.formatter_of_buffer buff ;
                      est_in_ch                = ref None ;
                      est_out_ch               = ref None ;
-                     node_server              = ref None ; (* fill in below *)                     
+                     node_server              = ref None ; (* fill in below *)  
+                     next_process_id          = ref 0 ;                   
                    } in
           log_msg ns Info "node start up" 
             (fun () -> Format.fprintf ns.log_formatter "{Distributed library version : %s ; Threading implementation : [name : %s ; version : %s ; description : %s]}" 
@@ -1601,8 +1523,6 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             let local_sock_addr =  Unix.ADDR_INET (Unix.inet6_addr_any , remote_config.Remote_config.local_port) in          
             I.establish_server ~backlog:remote_config.Remote_config.connection_backlog local_sock_addr (node_server_fn ns) >>= fun command_process_server ->
             ns.node_server := Some command_process_server ;
-            async (fun () -> send_heart_beats_fn ns remote_config.Remote_config.heart_beat_frequency) ;
-            async (fun () -> process_remote_heart_beats_timeout_fn ns remote_config.Remote_config.heart_beat_timeout) ; 
             at_exit (
               fun () ->
                 log_msg ns Info "node shutting down" (fun () -> Format.fprintf ns.log_formatter "start clean up actions for remote mode with configuration of " ; print_string_of_config node_config ns.log_formatter) >>= fun () ->
@@ -1613,7 +1533,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             then return ()
             else 
               begin
-                let new_pid = Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name in
+                let new_pid = Process_id.make_remote remote_config.Remote_config.node_ip remote_config.Remote_config.local_port remote_config.Remote_config.node_name ns.next_process_id in
                 Hashtbl.replace ns.mailboxes (Process_id.get_id new_pid) (I.create_stream ()) ; 
                 run_process' ns new_pid ((Potpourri.get_option process) ())
               end             

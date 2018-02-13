@@ -19,8 +19,6 @@ module D = Distributed_lwt.Make (Message) (Custom_logger)
 
 let config = D.Remote { D.Remote_config.node_name = "name_server" ; 
                         D.Remote_config.local_port = 45000 ;
-                        D.Remote_config.heart_beat_frequency = 5.0 ;
-                        D.Remote_config.heart_beat_timeout = 10.0 ;
                         D.Remote_config.connection_backlog = 10 ;
                         D.Remote_config.node_ip = "127.0.0.1" ;
                         D.Remote_config.remote_nodes = [] ;

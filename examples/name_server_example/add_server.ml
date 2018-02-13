@@ -18,8 +18,6 @@ exception Failed_to_register
 
 let config = D.Remote { D.Remote_config.node_name = "add_server" ; 
                         D.Remote_config.local_port = 46000 ;
-                        D.Remote_config.heart_beat_frequency = 5.0 ;
-                        D.Remote_config.heart_beat_timeout = 10.0 ;
                         D.Remote_config.connection_backlog = 10 ;
                         D.Remote_config.node_ip = "127.0.0.1" ;
                         D.Remote_config.remote_nodes = [] ; (* we will add nodes dynamically*)

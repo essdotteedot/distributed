@@ -7,14 +7,17 @@
 - Move to using Jbuilder (using topkg jbuilder integration as well) instead of Oasis. The library will now appear as two
   packages on opam : distributed (the concurrent I/O agnostic core) and distributed-lwt the lwt based implementation.
 - Moved to using odoc to generate documentation.
-- Moved to using alcotest for unit testing instead of oUnit
-- Ensure compatibility with lwt >= 4.0.0 (safe semantics) #3
+- Stopped using oUnit for unit tests.
+- Ensure compatibility with lwt >= 4.0.0 (safe semantics) #3.
+- Ensure pids are unique across functor invocations.
+- Simplify library : remove heartbeat functionality, can be duplicated at application level using receive time-outs and spawning
+  corresponding process on remote node.
 
 ### 0.4.0 (2017-01-18)
 
 - Distributed 0.4.0 is Lwt 3.0.0 compatible see #1.
 - Changed the signature of `case` function from `val case : (message_type -> bool) -> (message_type -> 'a t) -> 'a matcher` to `val case : (message_type -> (unit -> 'a t) option) -> 'a matcher` to remove unnecessary asserts.
-- Added more unit tests to increase code coverage, integrated with coveralls in build process to get automatic coverage reports
+- Added more unit tests to increase code coverage, integrated with coveralls in build process to get automatic coverage reports.
 - bug fixes related to heart beat monitoring.
 
 ### 0.3.0 (2016-11-06)

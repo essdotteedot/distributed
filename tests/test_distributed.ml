@@ -2,6 +2,8 @@
 
 exception Test_ex
 
+exception Test_failure of string
+
 let established_connections : int ref = ref 0
 
 let exit_fns : (unit -> unit Lwt.t) list ref = ref []
@@ -103,7 +105,29 @@ let get_option (v : 'a option) : 'a =
   | None -> assert false 
   | Some v' -> v'
 
-let test_run_wrapper lwt_exp =
+let assert_equal msg expect actual =
+  if expect = actual then () else raise (Test_failure msg)
+
+let run_tests suite_name tests =
+  Printf.printf "Running suite %s\n" suite_name ;
+  let buff_test_output = Buffer.create 1024 in  
+  let total_tests_ran = ref 0 in
+  let total_tests_failed = ref 0 in
+  let formatter_test_output = Format.formatter_of_buffer buff_test_output in
+  let iter_fn (test_name, test_fn) =
+    try (total_tests_ran := !total_tests_ran + 1 ; test_fn ())
+    with Test_failure reason -> 
+      (total_tests_failed := !total_tests_failed + 1; 
+       Format.fprintf formatter_test_output "Test \"%s\" failed : %s.\n" test_name reason)
+  in
+  let start_time = Sys.time () in
+  List.iter iter_fn tests ;
+  let duration = Sys.time() -. start_time in
+  Printf.printf "Ran %d tests in %f seconds (processor time), %d passed, %d failed.\n" !total_tests_ran duration (!total_tests_ran - !total_tests_failed) !total_tests_failed ;
+  Printf.printf "%s" @@ Buffer.contents buff_test_output ; 
+  if !total_tests_failed > 0 then exit 1 else exit 0
+
+let test_run_wrapper test_name lwt_exp =
   Lwt.(Lwt_main.run (
     (* override the default asycn exception hook, because the default kills the process 
        in the distributed lib, the async exception is only propageted after performing
@@ -113,6 +137,7 @@ let test_run_wrapper lwt_exp =
     async_exception_hook := (fun e -> ()) ; 
     established_connections := 0 ; 
     exit_fns := [] ; 
+    Test_io.log Test_io.Debug (fun () -> Format.sprintf "------ Starting test %s ------" test_name) >>= fun () ->
     lwt_exp ()))         
 
 (* there is a lot of code duplication because ocaml currently does not support higher kinded polymorphism *)  
@@ -128,9 +153,9 @@ let test_return_bind _ =
       result := Some i ;
       return ()       
     ) in             
-  test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc) ;
-  Alcotest.(check @@ option int) "return, bind failed" (Some 5) !result ;     
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections)
+  test_run_wrapper "test_return_bind" (fun () -> P.run_node node_config ~process:test_proc) ;
+  assert_equal "return, bind failed" (Some 5) !result ;     
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)
 
 (* spawn, spawn monitor tests for local and remote configurations *)
 
@@ -141,22 +166,20 @@ let test_spawn_local_local_config _ =
   let mres = ref None in
   let test_proc () = P.(                    
       get_self_node >>= fun local_node ->
-      Alcotest.(check bool) "process should not have spawned yet" true (not !result) ;
+      assert_equal "process should not have spawned yet" true (not !result) ;
       spawn local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (_, mon_res) ->
       mres := mon_res ;
       return ()        
     ) in             
-  test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc) ;
-  Alcotest.(check bool) "monitor result should have been None" true (!mres = None) ;
-  Alcotest.(check bool) "process was not spawned" true !result ;     
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections)
+  test_run_wrapper "test_spawn_local_local_config" (fun () -> P.run_node node_config ~process:test_proc) ;
+  assert_equal "monitor result should have been None" true (!mres = None) ;
+  assert_equal "process was not spawned" true !result ;     
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)
 
 let test_spawn_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;
-                               P.Remote_config.heart_beat_frequency = 2.0 ;
-                               P.Remote_config.heart_beat_timeout = 5.0 ;
+                               P.Remote_config.local_port = 45000 ;                               
                                P.Remote_config.connection_backlog = 10 ;
                                P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
@@ -165,18 +188,18 @@ let test_spawn_local_remote_config _ =
   let mres = ref None in
   let test_proc () = P.(        
       get_self_node >>= fun local_node ->
-      Alcotest.(check bool) "process should not have spawned yet" true (not !result) ;
+      assert_equal "process should not have spawned yet" true (not !result) ;
       spawn local_node (fun () -> return () >>= fun _ -> result := true ; return ()) >>= fun (_, mon_res) ->
       mres := mon_res ;      
       return ()        
     ) in             
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_spawn_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () ->       
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check bool) "process was not spawned" true !result ;
-      Alcotest.(check bool) "monitor result should have been none" true (!mres = None) ;    
-      Alcotest.(check int) "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;  
+      assert_equal "process was not spawned" true !result ;
+      assert_equal "monitor result should have been none" true (!mres = None) ;    
+      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;  
       
       return ()
     )
@@ -186,17 +209,13 @@ let test_spawn_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -206,7 +225,7 @@ let test_spawn_remote_remote_config _ =
   let producer_proc () = Producer.(
       get_remote_nodes >>= fun nodes ->
       get_self_pid >>= fun pid_to_send_to ->
-      Alcotest.(check bool) "process should not have spawned yet" true (!spawn_res = None) ;
+      assert_equal "process should not have spawned yet" true (!spawn_res = None) ;
       spawn (List.hd nodes) (fun () -> Consumer.send pid_to_send_to "spawned") >>= fun (_, mon_res) ->      
       receive ~timeout_duration:0.05 [
         case (fun v -> Some (fun () -> return v))
@@ -216,12 +235,12 @@ let test_spawn_remote_remote_config _ =
       return ()                   
     ) in
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_spawn_remote_remote_config" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;                
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
-      Alcotest.(check @@ option string) "process did not spawn" (Some "spawned") !spawn_res ;
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+      assert_equal "process did not spawn" (Some "spawned") !spawn_res ;
       
       return () 
     ) 
@@ -235,7 +254,7 @@ let test_spawn_monitor_local_local_config _ =
   let mres = ref None in
   let test_proc () = P.(                          
       get_self_node >>= fun local_node ->
-      Alcotest.(check bool) "process should not have spawned yet" true (not @@ !result && !result_monitor = None) ;      
+      assert_equal "process should not have spawned yet" true (not @@ !result && !result_monitor = None) ;      
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (_, mon_res) ->
       receive [
         termination_case 
@@ -247,19 +266,17 @@ let test_spawn_monitor_local_local_config _ =
       mres := mon_res ;  
       return ()        
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
-  Alcotest.(check bool) "process was not spawned" true (!result && !result_monitor <> None) ;
-  Alcotest.(check @@ option string) "termination monitor result not received" (Some "got normal termination") !result_monitor ;     
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections) ;
-  Alcotest.(check bool) "spawn monitor failed" true (None <> !mres) ;
-  Alcotest.(check int) "should have established 0 connections" 0 (!established_connections)    
+  Lwt.(test_run_wrapper "test_spawn_monitor_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
+  assert_equal "process was not spawned" true (!result && !result_monitor <> None) ;
+  assert_equal "termination monitor result not received" (Some "got normal termination") !result_monitor ;     
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections) ;
+  assert_equal "spawn monitor failed" true (None <> !mres) ;
+  assert_equal "should have established 0 connections" 0 (!established_connections)    
 
 let test_spawn_monitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;
-                               P.Remote_config.heart_beat_frequency = 200.0 ;
-                               P.Remote_config.heart_beat_timeout = 500.0 ;
+                               P.Remote_config.local_port = 45000 ;                               
                                P.Remote_config.connection_backlog = 10 ;
                                P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
@@ -269,7 +286,7 @@ let test_spawn_monitor_local_remote_config _ =
   let mres = ref None in
   let test_proc () = P.(                          
       get_self_node >>= fun local_node ->
-      Alcotest.(check bool) "Process should not have spawned yet" true (not @@ !result && !result_monitor = None) ;      
+      assert_equal "Process should not have spawned yet" true (not @@ !result && !result_monitor = None) ;      
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (_, mon_res) ->
       receive [
         termination_case 
@@ -282,13 +299,13 @@ let test_spawn_monitor_local_remote_config _ =
       return ()             
     ) in             
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_spawn_monitor_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check bool) "process was not spawned" true (!result && !result_monitor <> None) ;
-      Alcotest.(check @@ option string) "termination monitor result not received" (Some "got normal termination") !result_monitor ;     
-      Alcotest.(check int) "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
-      Alcotest.(check bool) "spawn monitor failed" true (None <> !mres) ;
+      assert_equal "process was not spawned" true (!result && !result_monitor <> None) ;
+      assert_equal "termination monitor result not received" (Some "got normal termination") !result_monitor ;     
+      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+      assert_equal "spawn monitor failed" true (None <> !mres) ;
       
       return ()    
     )
@@ -298,17 +315,13 @@ let test_spawn_monitor_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -330,13 +343,13 @@ let test_spawn_monitor_remote_remote_config _ =
       return ()                       
     ) in
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_spawn_monitor_remote_remote_config" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
-      Alcotest.(check @@ option string) "termination monitor result not received" (Some "got normal termination") !result_monitor ;     
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
-      Alcotest.(check bool) "spawn monitor failed" true (None <> !mres) ;
+      assert_equal "termination monitor result not received" (Some "got normal termination") !result_monitor ;     
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+      assert_equal "spawn monitor failed" true (None <> !mres) ;
       
       return () 
     ) 
@@ -362,7 +375,7 @@ let test_monitor_local_local_config _ =
   ) in 
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
-      Alcotest.(check bool) "Process should not have spawned yet" true (not !result) ;
+      assert_equal "Process should not have spawned yet" true (not !result) ;
       spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
       spawn local_node (another_monitor_proc new_pid) >>= fun _ ->
       monitor new_pid >>= fun _ ->
@@ -375,18 +388,16 @@ let test_monitor_local_local_config _ =
       ] >>= fun _ ->
       return ()        
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
-  Alcotest.(check bool) "process was not spawned" true (!result && !result_monitor <> None) ; 
-  Alcotest.(check @@ option string) "monitor failed" (Some "got normal termination") !result_monitor ;    
-  Alcotest.(check @@ option string) "monitor 2 failed" (Some "got normal termination") !result_monitor2 ;    
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections)    
+  Lwt.(test_run_wrapper "test_monitor_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
+  assert_equal "process was not spawned" true (!result && !result_monitor <> None) ; 
+  assert_equal "monitor failed" (Some "got normal termination") !result_monitor ;    
+  assert_equal "monitor 2 failed" (Some "got normal termination") !result_monitor2 ;    
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)    
 
 let test_monitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;
-                               P.Remote_config.heart_beat_frequency = 2.0 ;
-                               P.Remote_config.heart_beat_timeout = 5.0 ;
+                               P.Remote_config.local_port = 45000 ;                               
                                P.Remote_config.connection_backlog = 10 ;
                                P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
@@ -406,7 +417,7 @@ let test_monitor_local_remote_config _ =
   ) in   
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
-      Alcotest.(check bool) "Process should not have spawned yet" true (not !result) ;
+      assert_equal "Process should not have spawned yet" true (not !result) ;
       spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
       spawn local_node (another_monitor_proc new_pid) >>= fun _ ->
       monitor new_pid >>= fun _ ->
@@ -420,13 +431,13 @@ let test_monitor_local_remote_config _ =
       return ()       
     ) in             
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_monitor_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check bool) "process was not spawned" true (!result && !result_monitor <> None) ;
-      Alcotest.(check @@ option string) "monitor failed" (Some "got normal termination") !result_monitor ;      
-      Alcotest.(check @@ option string) "monitor 2 failed" (Some "got normal termination") !result_monitor2 ;      
-      Alcotest.(check int) "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+      assert_equal "process was not spawned" true (!result && !result_monitor <> None) ;
+      assert_equal "monitor failed" (Some "got normal termination") !result_monitor ;      
+      assert_equal "monitor 2 failed" (Some "got normal termination") !result_monitor2 ;      
+      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()    
     )
@@ -436,17 +447,13 @@ let test_monitor_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -479,13 +486,13 @@ let test_monitor_remote_remote_config _ =
       return ()                 
     ) in
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_monitor_remote_remote_config" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
-      Alcotest.(check @@ option string) "monitor failed" (Some "got normal termination") !result_monitor ;      
-      Alcotest.(check @@ option string) "monitor 2 failed" (Some "got normal termination") !result_monitor2 ;      
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+      assert_equal "monitor failed" (Some "got normal termination") !result_monitor ;      
+      assert_equal "monitor 2 failed" (Some "got normal termination") !result_monitor2 ;      
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -512,7 +519,7 @@ let test_unmonitor_local_local_config _ =
   ) in     
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
-      Alcotest.(check bool) "process should not have spawned yet" true (not !result) ;
+      assert_equal "process should not have spawned yet" true (not !result) ;
       spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
       spawn local_node (another_monitor_proc new_pid) >>= fun _ ->
       monitor new_pid >>= fun mon_res ->
@@ -527,18 +534,16 @@ let test_unmonitor_local_local_config _ =
       unmon_res := received ;
       return ()        
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
-  Alcotest.(check bool) "process was not spawned" true !result ;
-  Alcotest.(check @@ option string) "unmonitor failed" None !unmon_res ;     
-  Alcotest.(check @@ option string) "unmonitor 2 failed" None !unmon_res2 ;     
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections)    
+  Lwt.(test_run_wrapper "test_unmonitor_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
+  assert_equal "process was not spawned" true !result ;
+  assert_equal "unmonitor failed" None !unmon_res ;     
+  assert_equal "unmonitor 2 failed" None !unmon_res2 ;     
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)    
 
 let test_unmonitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;
-                               P.Remote_config.heart_beat_frequency = 2.0 ;
-                               P.Remote_config.heart_beat_timeout = 5.0 ;
+                               P.Remote_config.local_port = 45000 ;                               
                                P.Remote_config.connection_backlog = 10 ;
                                P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
@@ -559,7 +564,7 @@ let test_unmonitor_local_remote_config _ =
   ) in     
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
-      Alcotest.(check bool) "Process should not have spawned yet" true (not !result) ;
+      assert_equal "Process should not have spawned yet" true (not !result) ;
       spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
       spawn local_node (another_monitor_proc new_pid) >>= fun _ ->
       monitor new_pid >>= fun mon_res ->
@@ -575,13 +580,13 @@ let test_unmonitor_local_remote_config _ =
       return ()        
     ) in             
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_unmonitor_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check bool) "process was not spawned" true !result ;  
-      Alcotest.(check @@ option string) "unmonitor failed" None !unmon_res ;    
-      Alcotest.(check @@ option string) "unmonitor 2 failed" None !unmon_res2 ;    
-      Alcotest.(check int) "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+      assert_equal "process was not spawned" true !result ;  
+      assert_equal "unmonitor failed" None !unmon_res ;    
+      assert_equal "unmonitor 2 failed" None !unmon_res2 ;    
+      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()    
     )
@@ -591,17 +596,13 @@ let test_unmonitor_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -637,13 +638,13 @@ let test_unmonitor_remote_remote_config _ =
       return ()                 
     ) in
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_unmonitor_remote_remote_config" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
-      Alcotest.(check @@ option string) "unmonitor failed" None !unmon_res ;    
-      Alcotest.(check @@ option string) "unmonitor 2 failed" None !unmon_res2 ;    
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+      assert_equal "unmonitor failed" None !unmon_res ;    
+      assert_equal "unmonitor 2 failed" None !unmon_res2 ;    
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -659,7 +660,7 @@ let test_unmonitor_from_spawn_monitor_local_local_config _ =
   let unmon_res = ref None in
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
-      Alcotest.(check bool) "Process should not have spawned yet" true (not !result) ;
+      assert_equal "Process should not have spawned yet" true (not !result) ;
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> result := true ; return ()) >>= fun (_, spawn_mon_res) ->
       mres := spawn_mon_res ;
       unmonitor (get_option spawn_mon_res) >>= fun () ->
@@ -673,17 +674,15 @@ let test_unmonitor_from_spawn_monitor_local_local_config _ =
       unmon_res := received ;
       return ()             
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
-  Alcotest.(check bool) "Process was not spawned and monitored" true (!result && !mres <> None) ;
-  Alcotest.(check @@ option string) "unmonitor failed" None !unmon_res ;       
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections)    
+  Lwt.(test_run_wrapper "test_unmonitor_from_spawn_monitor_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
+  assert_equal "Process was not spawned and monitored" true (!result && !mres <> None) ;
+  assert_equal "unmonitor failed" None !unmon_res ;       
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)    
 
 let test_unmonitor_from_spawn_monitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;
-                               P.Remote_config.heart_beat_frequency = 2.0 ;
-                               P.Remote_config.heart_beat_timeout = 5.0 ;
+                               P.Remote_config.local_port = 45000 ;                               
                                P.Remote_config.connection_backlog = 10 ;
                                P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
@@ -693,7 +692,7 @@ let test_unmonitor_from_spawn_monitor_local_remote_config _ =
   let unmon_res = ref None in  
   let test_proc () = P.(     
       get_self_node >>= fun local_node ->
-      Alcotest.(check bool) "Process should not have spawned yet" true (not !result) ;
+      assert_equal "Process should not have spawned yet" true (not !result) ;
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> result := true ; return ()) >>= fun (_, spawn_mon_res) ->      
       mres := spawn_mon_res ;
       unmonitor (get_option spawn_mon_res) >>= fun () ->
@@ -708,12 +707,12 @@ let test_unmonitor_from_spawn_monitor_local_remote_config _ =
       return ()                 
     ) in             
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_unmonitor_from_spawn_monitor_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check bool) "Process was not spawned and monitored" true (!result && !mres <> None) ;
-      Alcotest.(check @@ option string) "unmonitor failed" None !unmon_res ;       
-      Alcotest.(check int) "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+      assert_equal "Process was not spawned and monitored" true (!result && !mres <> None) ;
+      assert_equal "unmonitor failed" None !unmon_res ;       
+      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()    
     )
@@ -723,17 +722,13 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -756,12 +751,12 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
       return ()                  
     ) in
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_unmonitor_from_spawn_monitor_remote_remote_config" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
-      Alcotest.(check @@ option string) "unmonitor failed" None !unmon_res ;       
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+      assert_equal "unmonitor failed" None !unmon_res ;       
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -777,16 +772,14 @@ let test_get_remote_nodes_local_only _ =
       get_remote_nodes >>= fun nodes ->
       return (num_remote_nodes := (List.length nodes))       
     ) in             
-  test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc) ;     
-  Alcotest.(check int) "get remote nodes in local config should return 0" 0 !num_remote_nodes ;
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections)
+  test_run_wrapper "test_get_remote_nodes_local_only" (fun () -> P.run_node node_config ~process:test_proc) ;     
+  assert_equal "get remote nodes in local config should return 0" 0 !num_remote_nodes ;
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)
 
 let test_get_remote_nodes_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;
-                               P.Remote_config.heart_beat_frequency = 2.0 ;
-                               P.Remote_config.heart_beat_timeout = 5.0 ;
+                               P.Remote_config.local_port = 45000 ;                               
                                P.Remote_config.connection_backlog = 10 ;
                                P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
@@ -797,11 +790,11 @@ let test_get_remote_nodes_remote_local _ =
       return (num_remote_nodes := (List.length nodes))         
     ) in             
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_get_remote_nodes_local_only" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check int) "get remote nodes in remote config with no remote nodes should return 0" 0 !num_remote_nodes ;
-      Alcotest.(check int) "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+      assert_equal "get remote nodes in remote config with no remote nodes should return 0" 0 !num_remote_nodes ;
+      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()
     )
@@ -811,17 +804,13 @@ let test_get_remote_nodes_remote_conifg _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -832,12 +821,12 @@ let test_get_remote_nodes_remote_conifg _ =
       return (num_remote_nodes := (List.length nodes))                          
     ) in
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_get_remote_nodes_remote_conifg" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check int) "get remote nodes in remote config with 1 remote nodes should return 1" 1 !num_remote_nodes ;
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+      assert_equal "get remote nodes in remote config with 1 remote nodes should return 1" 1 !num_remote_nodes ;
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -872,17 +861,15 @@ let test_broadcast_local_only _ =
       loop_back_received := recv_res ;            
       return ()
     ) in           
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
-  Alcotest.(check int) "broacast failed" 2 !broadcast_received ;
-  Alcotest.(check @@ option string) "broadcast message sent to originator" None !loop_back_received ;    
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections)
+  Lwt.(test_run_wrapper "test_broadcast_local_only" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
+  assert_equal "broacast failed" 2 !broadcast_received ;
+  assert_equal "broadcast message sent to originator" None !loop_back_received ;    
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)
 
 let test_broadcast_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;
-                               P.Remote_config.heart_beat_frequency = 2.0 ;
-                               P.Remote_config.heart_beat_timeout = 5.0 ;
+                               P.Remote_config.local_port = 45000 ;                               
                                P.Remote_config.connection_backlog = 10 ;
                                P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
@@ -912,12 +899,12 @@ let test_broadcast_remote_local _ =
       return ()
     ) in           
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_broadcast_remote_local" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check int) "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
-      Alcotest.(check int) "broacast fail" 2 !broadcast_received ; 
-      Alcotest.(check @@ option string) "broadcast message sent to originator" None !loop_back_received ;     
+      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+      assert_equal "broacast fail" 2 !broadcast_received ; 
+      assert_equal "broadcast message sent to originator" None !loop_back_received ;     
       
       return ()  
     )
@@ -927,17 +914,13 @@ let test_broadcast_remote_remote _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -986,13 +969,13 @@ let test_broadcast_remote_remote _ =
       receive_loop ()      
     ) in      
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_broadcast_remote_remote" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check int) "broacast fail" 4 !broadcast_received ;
-      Alcotest.(check @@ option string) "broadcast message sent to originator" None !loop_back_received ;
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+      assert_equal "broacast fail" 4 !broadcast_received ;
+      assert_equal "broadcast message sent to originator" None !loop_back_received ;
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -1036,18 +1019,16 @@ let test_send_local_only _ =
       ] >>= fun _ ->           
       return ()
     ) in           
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
-  Alcotest.(check bool) "spawn and monitor failed" true (!mres <> None) ;
-  Alcotest.(check @@ option string) "send failed" (Some "sent message") !received_message ;
-  Alcotest.(check bool) "sending to invalid process should have succeeded" true (not !send_failed) ;    
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections)  
+  Lwt.(test_run_wrapper "test_send_local_only" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
+  assert_equal "spawn and monitor failed" true (!mres <> None) ;
+  assert_equal "send failed" (Some "sent message") !received_message ;
+  assert_equal "sending to invalid process should have succeeded" true (not !send_failed) ;    
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)  
 
 let test_send_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;
-                               P.Remote_config.heart_beat_frequency = 2.0 ;
-                               P.Remote_config.heart_beat_timeout = 5.0 ;
+                               P.Remote_config.local_port = 45000 ;                               
                                P.Remote_config.connection_backlog = 10 ;
                                P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
@@ -1086,13 +1067,13 @@ let test_send_remote_local _ =
       return ()
     ) in           
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_send_remote_local" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check bool) "spawn and monitor failed" true (!mres <> None) ;
-      Alcotest.(check @@ option string) "send failed" (Some "sent message") !received_message ;
-      Alcotest.(check bool) "sending to invalid process should have succeeded" true (not !send_failed) ;   
-      Alcotest.(check int) "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+      assert_equal "spawn and monitor failed" true (!mres <> None) ;
+      assert_equal "send failed" (Some "sent message") !received_message ;
+      assert_equal "sending to invalid process should have succeeded" true (not !send_failed) ;   
+      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()    
     )
@@ -1102,17 +1083,13 @@ let test_send_remote_remote _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -1168,13 +1145,13 @@ let test_send_remote_remote _ =
       receive_loop ()      
     ) in      
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_send_remote_remote" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check int) "send fail" 4 !sent_received ;
-      Alcotest.(check bool) "sending to invalid process should have succeeded" true (not !send_failed) ;      
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+      assert_equal "send fail" 4 !sent_received ;
+      assert_equal "sending to invalid process should have succeeded" true (not !send_failed) ;      
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -1195,16 +1172,14 @@ let test_empty_matchers_local_only _ =
         ) >>= fun _ ->           
       return ()
     ) in           
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
-  Alcotest.(check bool) "expected empty matchers exception did not occur" true !expected_exception_happened;
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections)
+  Lwt.(test_run_wrapper "test_empty_matchers_local_only" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
+  assert_equal "expected empty matchers exception did not occur" true !expected_exception_happened;
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)
 
 let test_empty_matchers_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;
-                               P.Remote_config.heart_beat_frequency = 2.0 ;
-                               P.Remote_config.heart_beat_timeout = 5.0 ;
+                               P.Remote_config.local_port = 45000 ;                               
                                P.Remote_config.connection_backlog = 10 ;
                                P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
@@ -1220,11 +1195,11 @@ let test_empty_matchers_remote_local _ =
       return ()
     ) in            
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_empty_matchers_remote_local" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check bool) "expected empty matchers exception did not occur" true !expected_exception_happened;   
-      Alcotest.(check int) "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+      assert_equal "expected empty matchers exception did not occur" true !expected_exception_happened;   
+      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return () 
     )
@@ -1234,17 +1209,13 @@ let test_empty_matchers_remote_remote _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -1260,12 +1231,12 @@ let test_empty_matchers_remote_remote _ =
       return ()       
     ) in      
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_empty_matchers_remote_remote" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check bool) "expected empty matchers exception did not occur" true !expected_exception_happened;   
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+      assert_equal "expected empty matchers exception did not occur" true !expected_exception_happened;   
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -1295,16 +1266,14 @@ let test_raise_local_config _ =
       ] >>= fun _ ->            
       return ()        
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
-  Alcotest.(check bool) "expceted exception did not occur" true !expected_exception_happened ;
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections)    
+  Lwt.(test_run_wrapper "test_raise_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
+  assert_equal "expceted exception did not occur" true !expected_exception_happened ;
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)    
 
 let test_raise_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;
-                               P.Remote_config.heart_beat_frequency = 200.0 ;
-                               P.Remote_config.heart_beat_timeout = 500.0 ;
+                               P.Remote_config.local_port = 45000 ;                               
                                P.Remote_config.connection_backlog = 10 ;
                                P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
@@ -1329,11 +1298,11 @@ let test_raise_local_remote_config _ =
       return ()        
     ) in        
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_raise_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check bool) "expceted exception did not occur" true !expected_exception_happened ;  
-      Alcotest.(check int) "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;  
+      assert_equal "expceted exception did not occur" true !expected_exception_happened ;  
+      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;  
       
       return ()    
     )
@@ -1347,17 +1316,13 @@ let test_raise_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -1388,12 +1353,12 @@ let test_raise_remote_remote_config _ =
       return ()                       
     ) in
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_raise_remote_remote_config" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;                
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
-      Alcotest.(check bool) "expceted exception did not occur" true !expected_exception_happened ;  
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;      
+      assert_equal "expceted exception did not occur" true !expected_exception_happened ;  
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;      
       
       return () 
     ) 
@@ -1408,7 +1373,7 @@ let test_monitor_dead_process_local_local_config _ =
   let result_monitor = ref None in  
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
-      Alcotest.(check bool) "Process should not have spawned yet" true (not !result) ;
+      assert_equal "Process should not have spawned yet" true (not !result) ;
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (new_pid, _) ->
       receive [
         termination_case
@@ -1427,17 +1392,15 @@ let test_monitor_dead_process_local_local_config _ =
       ] >>= fun _ ->
       return ()        
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
-  Alcotest.(check bool) "process was not spawned" true (!result && !result_monitor <> None) ; 
-  Alcotest.(check @@ option string) "did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;    
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections)    
+  Lwt.(test_run_wrapper "test_monitor_dead_process_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
+  assert_equal "process was not spawned" true (!result && !result_monitor <> None) ; 
+  assert_equal "did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;    
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)    
 
 let test_monitor_dead_process_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;
-                               P.Remote_config.heart_beat_frequency = 2.0 ;
-                               P.Remote_config.heart_beat_timeout = 5.0 ;
+                               P.Remote_config.local_port = 45000 ;                               
                                P.Remote_config.connection_backlog = 10 ;
                                P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
@@ -1446,7 +1409,7 @@ let test_monitor_dead_process_local_remote_config _ =
   let result_monitor = ref None in  
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
-      Alcotest.(check bool) "Process should not have spawned yet" true (not !result) ;
+      assert_equal "Process should not have spawned yet" true (not !result) ;
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (new_pid, _) ->
       receive [
         termination_case
@@ -1466,12 +1429,12 @@ let test_monitor_dead_process_local_remote_config _ =
       return ()        
     ) in             
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_monitor_dead_process_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check bool) "process was not spawned" true (!result && !result_monitor <> None) ;
-      Alcotest.(check @@ option string) "did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;      
-      Alcotest.(check int) "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+      assert_equal "process was not spawned" true (!result && !result_monitor <> None) ;
+      assert_equal "did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;      
+      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()    
     )
@@ -1481,17 +1444,13 @@ let test_monitor_dead_process_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -1518,12 +1477,12 @@ let test_monitor_dead_process_remote_remote_config _ =
       return ()                 
     ) in
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_monitor_dead_process_remote_remote_config" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
-      Alcotest.(check @@ option string) "did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;      
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+      assert_equal "did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;      
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -1560,10 +1519,10 @@ let test_add_remove_remote_nodes_in_local_config _ =
       >>= fun _ ->
       return ()        
     ) in             
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
-  Alcotest.(check bool) "add_remote_node should have throw Local_only_mode exception when running with a local only config" true !add_pass ; 
-  Alcotest.(check bool) "remove_remote_node should have throw Local_only_mode exception when running with a local only config" true !remove_pass ;    
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections)    
+  Lwt.(test_run_wrapper "test_add_remove_remote_nodes_in_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
+  assert_equal "add_remote_node should have throw Local_only_mode exception when running with a local only config" true !add_pass ; 
+  assert_equal "remove_remote_node should have throw Local_only_mode exception when running with a local only config" true !remove_pass ;    
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)    
 
 (* test adding/removing nodes in remote configurations. *)
 
@@ -1571,17 +1530,13 @@ let test_add_remove_nodes_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [] ; (* start with with no node connections *)
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -1633,19 +1588,19 @@ let test_add_remove_nodes_remote_config _ =
         )
     ) in
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_add_remove_nodes_remote_config" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
-      Alcotest.(check int) "remote nodes should have been empty before adding" 0 (List.length !remote_nodes_at_start) ;
-      Alcotest.(check int) "remote nodes should have 1 remote node after adding" 1 (List.length !remote_nodes_after_add) ;      
-      Alcotest.(check int) "remote nodes should have 1 remote node after adding a dup" 1 (List.length !remote_nodes_after_dup_add) ;      
-      Alcotest.(check int) "remote nodes should have been empty after removing" 0 (List.length !remote_nodes_after_remove) ;
-      Alcotest.(check bool) "expected InvalidNode exception did not occur when monitoring on removed node" true !expected_monitor_exception ;
-      Alcotest.(check bool) "expected InvalidNode exception did not occur when spawning on removed node" true !expected_spawn_exception ;
-      Alcotest.(check bool) "expected InvalidNode exception did not occur when broadcasting on removed node" true !expected_broadcast_exception ;
-      Alcotest.(check bool) "expected InvalidNode exception did not occur when sending message on removed node" true !expected_send_exception ;            
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+      assert_equal "remote nodes should have been empty before adding" 0 (List.length !remote_nodes_at_start) ;
+      assert_equal "remote nodes should have 1 remote node after adding" 1 (List.length !remote_nodes_after_add) ;      
+      assert_equal "remote nodes should have 1 remote node after adding a dup" 1 (List.length !remote_nodes_after_dup_add) ;      
+      assert_equal "remote nodes should have been empty after removing" 0 (List.length !remote_nodes_after_remove) ;
+      assert_equal "expected InvalidNode exception did not occur when monitoring on removed node" true !expected_monitor_exception ;
+      assert_equal "expected InvalidNode exception did not occur when spawning on removed node" true !expected_spawn_exception ;
+      assert_equal "expected InvalidNode exception did not occur when broadcasting on removed node" true !expected_broadcast_exception ;
+      assert_equal "expected InvalidNode exception did not occur when sending message on removed node" true !expected_send_exception ;            
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
@@ -1686,17 +1641,15 @@ let test_selective_receive_local_config _ =
       lift_io (Test_io.sleep 0.2) >>= fun () ->
       return () 
     ) in
-  Lwt.(test_run_wrapper (fun () -> P.run_node node_config ~process:main_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
-  Alcotest.(check @@ option string) "selective receive failed, candidate message" (Some "the one") !selective_message ;
-  Alcotest.(check @@ list string) "selective receive failed, other messages" ["0" ; "1" ; "2" ; "3" ; "4" ; "5"] !other_messages_inorder ;
-  Alcotest.(check int) "local config should hav establised 0 connections" 0 (!established_connections)     
+  Lwt.(test_run_wrapper "test_selective_receive_local_config" (fun () -> P.run_node node_config ~process:main_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
+  assert_equal "selective receive failed, candidate message" (Some "the one") !selective_message ;
+  assert_equal "selective receive failed, other messages" ["0" ; "1" ; "2" ; "3" ; "4" ; "5"] !other_messages_inorder ;
+  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)     
 
 let test_selective_receive_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;
-                               P.Remote_config.heart_beat_frequency = 2.0 ;
-                               P.Remote_config.heart_beat_timeout = 5.0 ;
+                               P.Remote_config.local_port = 45000 ;                               
                                P.Remote_config.connection_backlog = 10 ;
                                P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
@@ -1732,12 +1685,12 @@ let test_selective_receive_local_remote_config _ =
       return () 
     ) in
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_selective_receive_local_remote_config" (fun () -> 
       P.run_node node_config ~process:main_proc >>= fun () -> 
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check @@ option string) "selective receive failed, candidate message" (Some "the one") !selective_message ;
-      Alcotest.(check @@ list string) "selective receive failed, other messages" ["0" ; "1" ; "2" ; "3" ; "4" ; "5"] !other_messages_inorder ;
-      Alcotest.(check int) "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+      assert_equal "selective receive failed, candidate message" (Some "the one") !selective_message ;
+      assert_equal "selective receive failed, other messages" ["0" ; "1" ; "2" ; "3" ; "4" ; "5"] !other_messages_inorder ;
+      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
       
       return ()                      
     )
@@ -1747,17 +1700,13 @@ let test_selective_receive_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -1807,12 +1756,12 @@ let test_selective_receive_remote_remote_config _ =
       lift_io (Test_io.sleep 0.1)
     ) in
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_selective_receive_remote_remote_config" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;  
       Producer.run_node node_config ~process:main_proc >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->  
-      Alcotest.(check @@ list string) "selective receive failed, other messages"  ["the one" ; "5" ; "4" ; "3" ; "2" ; "1" ; "0"] !messages_inorder ;
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+      assert_equal "selective receive failed, other messages"  ["the one" ; "5" ; "4" ; "3" ; "2" ; "1" ; "0"] !messages_inorder ;
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return ()
     ) 
@@ -1825,7 +1774,7 @@ let test_multiple_run_node _ =
   let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let exception_thrown = ref None in
 
-  Lwt.(test_run_wrapper (fun () -> 
+  Lwt.(test_run_wrapper "test_multiple_run_node" (fun () -> 
       P.run_node node_config >>= fun () ->
       catch
         (fun () -> P.run_node node_config)
@@ -1833,8 +1782,8 @@ let test_multiple_run_node _ =
           | P.Init_more_than_once -> exception_thrown := Some true ; return ()
           | _ -> return ()) >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())
     )) ;
-    Alcotest.(check @@ option bool) "Init more than once failed, did not get exception" (Some true) !exception_thrown ;
-    Alcotest.(check int) "should hav established 0 connections" 0 (!established_connections) 
+    assert_equal "Init more than once failed, did not get exception" (Some true) !exception_thrown ;
+    assert_equal "should hav established 0 connections" 0 (!established_connections) 
 
 (* test get_remote_node*)
 
@@ -1853,17 +1802,15 @@ let test_get_remote_node_local_only _ =
           | Some _ -> nonexistent_remote_node_result := Some "fail" ; return ())
     ) in 
 
-  Lwt.(test_run_wrapper (fun () -> (P.run_node node_config ~process:p)  >>= fun _ -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
-  Alcotest.(check @@ option string) "get_remote_node failed locally, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
-  Alcotest.(check @@ option string) "get_remote_node failed locally, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
-  Alcotest.(check int) "should have established 0 connections" 0 (!established_connections)
+  Lwt.(test_run_wrapper "test_get_remote_node_local_only" (fun () -> (P.run_node node_config ~process:p)  >>= fun _ -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
+  assert_equal "get_remote_node failed locally, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
+  assert_equal "get_remote_node failed locally, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
+  assert_equal "should have established 0 connections" 0 (!established_connections)
 
 let test_get_remote_node_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
   let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;
-                               P.Remote_config.heart_beat_frequency = 2.0 ;
-                               P.Remote_config.heart_beat_timeout = 5.0 ;
+                               P.Remote_config.local_port = 45000 ;                               
                                P.Remote_config.connection_backlog = 10 ;
                                P.Remote_config.node_ip = "127.0.0.1" ;
                                P.Remote_config.remote_nodes = [] ;
@@ -1880,11 +1827,11 @@ let test_get_remote_node_local_remote_config _ =
           | Some _ -> nonexistent_remote_node_result := Some "fail" ; return ())
     ) in 
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_get_remote_node_local_remote_config" (fun () -> 
       (P.run_node node_config ~process:p)  >>= fun () -> 
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      Alcotest.(check @@ option string) "get_remote_node failed locally with remote config, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
-      Alcotest.(check @@ option string) "get_remote_node failed locally with remote config, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
+      assert_equal "get_remote_node failed locally with remote config, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
+      assert_equal "get_remote_node failed locally with remote config, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
       
       return ()  
     )
@@ -1894,17 +1841,13 @@ let test_get_remote_node_remote_remote_config _ =
   let module Producer = Distributed.Make (Test_io) (M) in
   let module Consumer = Distributed.Make (Test_io) (M) in  
   let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 200.0 ;
-                                      Producer.Remote_config.heart_beat_timeout = 500.0 ;
+                                      Producer.Remote_config.local_port = 45000 ;                                      
                                       Producer.Remote_config.connection_backlog = 10 ;
                                       Producer.Remote_config.node_ip = "127.0.0.1" ;
                                       Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
                                     } in
   let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 200.0 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 500.0 ;
+                                        Consumer.Remote_config.local_port = 46000 ;                                        
                                         Consumer.Remote_config.connection_backlog = 10 ;
                                         Consumer.Remote_config.node_ip = "127.0.0.1" ;
                                         Consumer.Remote_config.remote_nodes = [] ;
@@ -1933,167 +1876,78 @@ let test_get_remote_node_remote_remote_config _ =
     ) in 
 
   Lwt.(
-    test_run_wrapper (fun () -> 
+    test_run_wrapper "test_get_remote_node_remote_remote_config" (fun () -> 
       Lwt.async (fun () -> Consumer.run_node remote_config) ;  
       Producer.run_node node_config ~process:p >>= fun () ->
       List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
-      Alcotest.(check @@ option string) "get_remote_node failed remotely, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
-      Alcotest.(check @@ option string) "get_remote_node failed remotely, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
-      Alcotest.(check @@ option string) "get_remote_node failed remotely, existent node was not in remote nodes" (Some "ran") !exitent_remote_node_result ;
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+      assert_equal "get_remote_node failed remotely, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
+      assert_equal "get_remote_node failed remotely, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
+      assert_equal "get_remote_node failed remotely, existent node was not in remote nodes" (Some "ran") !exitent_remote_node_result ;
+      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
       
       return () 
     ) 
   )    
 
-(* test heart beat process/receive *)
-let test_heart_beat _ =
-  let module Producer = Distributed.Make (Test_io) (M) in
-  let module Consumer = Distributed.Make (Test_io) (M) in  
-  let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;
-                                      Producer.Remote_config.heart_beat_frequency = 0.3 ;
-                                      Producer.Remote_config.heart_beat_timeout = 0.12 ;
-                                      Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
-                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
-                                    } in
-  let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;
-                                        Consumer.Remote_config.heart_beat_frequency = 0.1 ;
-                                        Consumer.Remote_config.heart_beat_timeout = 0.1 ;
-                                        Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
-                                        Consumer.Remote_config.remote_nodes = [] ;
-                                      } in
-
-  let node_at_start_consumer = ref [] in  
-  let node_after_02_millseconds_consumer = ref [] in
-  let node_at_start_producer = ref [] in
-  let node_after_015_millseconds_producer = ref [] in
-  let node_at_03_milliseconds_producer = ref [] in
-  let node_went_down_consumer = ref None in
-  let node_went_down_producer = ref None in
-  let invalid_node_exception_spawn = ref None in
-  let invalid_node_exception_monitor = ref None in
-
-  let monitor_fn_consumer n = Consumer.(
-     return (node_went_down_consumer := Some (Distributed.Node_id.get_name n))
-  ) in
-
-  let monitor_fn_producer n = Producer.(
-     return (node_went_down_producer := Some (Distributed.Node_id.get_name n))
-  ) in
-
-  let consumer_proc () = Consumer.(
-      return () >>= fun _ ->
-      lift_io (Test_io.sleep 0.05) >>= fun () -> (* sleep a little bit to allow for the producer to connect *)      
-      get_remote_nodes >>= fun nodes_at_start ->
-      node_at_start_consumer := nodes_at_start ;
-      lift_io (Test_io.sleep 0.15) >>= fun () ->
-      get_remote_nodes >>= fun nodes_at_02 ->
-      node_after_02_millseconds_consumer := nodes_at_02 ;
-      catch 
-        (fun () -> spawn (List.hd nodes_at_start) (fun () -> return () >>= fun _ -> return ()) >>= fun _ -> return ())
-        (function | InvalidNode _ -> return (invalid_node_exception_spawn := Some true) | _ -> assert false)      
-    ) in  
-
-  let p () = Producer.(      
-      get_remote_nodes >>= fun nodes_at_start ->
-      spawn ~monitor:true (List.hd nodes_at_start) (fun () -> lift_io (Test_io.sleep 0.05) >>= fun _ -> return ()) >>= fun (_,mref) -> 
-      node_at_start_producer := nodes_at_start ; 
-      lift_io (Test_io.sleep 0.15) >>= fun () -> 
-      get_remote_nodes >>= fun nodes_at_015 ->
-      node_after_015_millseconds_producer := nodes_at_015 ;      
-      lift_io (Test_io.sleep 0.15) >>= fun () ->
-      get_remote_nodes >>= fun nodes_at_03 ->
-      node_at_03_milliseconds_producer := nodes_at_03 ;
-      catch 
-        (fun () -> unmonitor @@ get_option mref)
-        (function | InvalidNode _ -> return (invalid_node_exception_monitor := Some true) | _ -> assert false)      
-    ) in 
-
-  Lwt.(
-    test_run_wrapper (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config ~process:consumer_proc ~node_monitor_fn:monitor_fn_consumer) ;  
-      Producer.run_node node_config ~process:p ~node_monitor_fn:monitor_fn_producer >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
-      Alcotest.(check int) "test_heart_beat failed remotely, nodes at start should be of length 1 for consumer" 1 (List.length !node_at_start_consumer) ;
-      Alcotest.(check int) "test_heart_beat failed remotely, nodes at start should be of length 1 for producer" 1 (List.length !node_at_start_producer) ;
-      Alcotest.(check int) "test_heart_beat failed remotely, nodes at 015 should be of length 1 for producer" 1 (List.length !node_after_015_millseconds_producer) ;
-      Alcotest.(check int) "test_heart_beat failed remotely, nodes at 02 should be of length 0 for consumer" 0 (List.length !node_after_02_millseconds_consumer) ;
-      Alcotest.(check int) "test_heart_beat failed remotely, nodes at 03 should be of length 0 for producer" 0 (List.length !node_at_03_milliseconds_producer) ;
-      Alcotest.(check @@ option string) "test_heart_beat failed remotely, consumer node monitor function should have been called" (Some "producer") !node_went_down_consumer ;
-      Alcotest.(check @@ option string) "test_heart_beat failed remotely, producer node monitor function should have been called" (Some "consumer") !node_went_down_producer ;
-      Alcotest.(check @@ option bool) "test_heart_beat failed remotely, should have gotten InvalidNode exception when spawning on non-existent node" (Some true) !invalid_node_exception_spawn ;
-      Alcotest.(check @@ option bool) "test_heart_beat failed remotely, should have gotten InvalidNode exception when monitoring on non-existent node" (Some true) !invalid_node_exception_monitor ;
-      Alcotest.(check int) "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
-      
-      return () 
-    ) 
-  )                  
-
 let suite = [
-    "Test return and bind"                                                , `Quick,  test_return_bind ;
+    "Test return and bind"                                                ,   test_return_bind ;
 
-    "Test spawn local with local config"                                  , `Quick,  test_spawn_local_local_config ;
-    "Test spawn local with remote config"                                 , `Quick,  test_spawn_local_remote_config ;
-    "Test spawn remote with remote config"                                , `Quick,  test_spawn_remote_remote_config ;
+    "Test spawn local with local config"                                  ,   test_spawn_local_local_config ;
+    "Test spawn local with remote config"                                 ,   test_spawn_local_remote_config ;
+    "Test spawn remote with remote config"                                ,   test_spawn_remote_remote_config ;
 
-    "Test spawn monitor local with local config"                          , `Quick,  test_spawn_monitor_local_local_config;
-    "test spawn monitor local with remote config"                         , `Quick,  test_spawn_monitor_local_remote_config ;
-    "Test spawn monitor remote with remote config"                        , `Quick,  test_spawn_monitor_remote_remote_config ;
+    "Test spawn monitor local with local config"                          ,   test_spawn_monitor_local_local_config;
+    "test spawn monitor local with remote config"                         ,   test_spawn_monitor_local_remote_config ;
+    "Test spawn monitor remote with remote config"                        ,   test_spawn_monitor_remote_remote_config ;
 
-    "Test monitor local with local config"                                , `Quick,  test_monitor_local_local_config ;  
-    "Test monitor local remote config"                                    , `Quick,  test_monitor_local_remote_config ;
-    "Test monitor remote with remote config"                              , `Quick,  test_monitor_remote_remote_config ;
+    "Test monitor local with local config"                                ,   test_monitor_local_local_config ;  
+    "Test monitor local remote config"                                    ,   test_monitor_local_remote_config ;
+    "Test monitor remote with remote config"                              ,   test_monitor_remote_remote_config ;
 
-    "Test monitor dead process local with local config"                   , `Quick,  test_monitor_dead_process_local_local_config ;  
-    "Test monitor dead local remote config"                               , `Quick,  test_monitor_dead_process_local_remote_config ;
-    "Test monitor dead remote with remote config"                         , `Quick,  test_monitor_dead_process_remote_remote_config ;
+    "Test monitor dead process local with local config"                   ,   test_monitor_dead_process_local_local_config ;  
+    "Test monitor dead local remote config"                               ,   test_monitor_dead_process_local_remote_config ;
+    "Test monitor dead remote with remote config"                         ,   test_monitor_dead_process_remote_remote_config ;
 
-    "Test unmonitor local with local config"                              , `Quick,  test_unmonitor_local_local_config ;  
-    "Test unmonitor local with remote config"                             , `Quick,  test_unmonitor_local_remote_config ;
-    "Test unmonitor remote with remote config"                            , `Quick,  test_unmonitor_remote_remote_config ;    
+    "Test unmonitor local with local config"                              ,   test_unmonitor_local_local_config ;  
+    "Test unmonitor local with remote config"                             ,   test_unmonitor_local_remote_config ;
+    "Test unmonitor remote with remote config"                            ,   test_unmonitor_remote_remote_config ;    
 
-    "Test unmonitor from spawn monitor local with local config"           , `Quick,  test_unmonitor_from_spawn_monitor_local_local_config ;  
-    "Test unmonitor from spawn monitor local remote config"               , `Quick,  test_unmonitor_from_spawn_monitor_local_remote_config ;
-    "Test unmonitor from spawn monitor remote with remote config"         , `Quick,  test_unmonitor_from_spawn_monitor_remote_remote_config ;    
+    "Test unmonitor from spawn monitor local with local config"           ,   test_unmonitor_from_spawn_monitor_local_local_config ;  
+    "Test unmonitor from spawn monitor local remote config"               ,   test_unmonitor_from_spawn_monitor_local_remote_config ;
+    "Test unmonitor from spawn monitor remote with remote config"         ,   test_unmonitor_from_spawn_monitor_remote_remote_config ;    
 
-    "Test get remote nodes local with local config"                       , `Quick,  test_get_remote_nodes_local_only ;
-    "Test get remote nodes local with remote config"                      , `Quick,  test_get_remote_nodes_remote_local ;             
-    "Test get remote nodes remote with remote conifg"                     , `Quick,  test_get_remote_nodes_remote_conifg ; 
+    "Test get remote nodes local with local config"                       ,   test_get_remote_nodes_local_only ;
+    "Test get remote nodes local with remote config"                      ,   test_get_remote_nodes_remote_local ;             
+    "Test get remote nodes remote with remote conifg"                     ,   test_get_remote_nodes_remote_conifg ; 
 
-    "Test broadcast local with local config"                              , `Quick,  test_broadcast_local_only ;
-    "Test broadcast local with remote config"                             , `Quick,  test_broadcast_remote_local ; 
-    "Test broadcast remote and local with remote config"                  , `Quick,  test_broadcast_remote_remote ;    
+    "Test broadcast local with local config"                              ,   test_broadcast_local_only ;
+    "Test broadcast local with remote config"                             ,   test_broadcast_remote_local ; 
+    "Test broadcast remote and local with remote config"                  ,   test_broadcast_remote_remote ;    
 
-    "Test send local with local config"                                   , `Quick,  test_send_local_only ;  
-    "Test send local with remote config"                                  , `Quick,  test_send_remote_local ; 
-    "Test send remote and local with remote config"                       , `Quick,  test_send_remote_remote ; 
+    "Test send local with local config"                                   ,   test_send_local_only ;  
+    "Test send local with remote config"                                  ,   test_send_remote_local ; 
+    "Test send remote and local with remote config"                       ,   test_send_remote_remote ; 
 
-    "Test receive with empty matchers local with local config"            , `Quick,  test_empty_matchers_local_only ;  
-    "Test receive with empty matchers local with remote config"           , `Quick,  test_empty_matchers_remote_local ;
-    "Test receive with empty matchers remote with remote config"          , `Quick,  test_empty_matchers_remote_remote ;  
+    "Test receive with empty matchers local with local config"            ,   test_empty_matchers_local_only ;  
+    "Test receive with empty matchers local with remote config"           ,   test_empty_matchers_remote_local ;
+    "Test receive with empty matchers remote with remote config"          ,   test_empty_matchers_remote_remote ;  
 
-    "Test raise exception on monitored process local with local config"   , `Quick,  test_raise_local_config;
-    "Test raise exception on monitored process local with remote config"  , `Quick,  test_raise_local_remote_config ;
-    "Test raise exception on monitored process remote with remote config" , `Quick,  test_raise_remote_remote_config ;
+    "Test raise exception on monitored process local with local config"   ,   test_raise_local_config;
+    "Test raise exception on monitored process local with remote config"  ,   test_raise_local_remote_config ;
+    "Test raise exception on monitored process remote with remote config" ,   test_raise_remote_remote_config ;
 
-    "Test add/remove remote node in local only config"                    , `Quick,  test_add_remove_remote_nodes_in_local_config ;
-    "Test add/remove remote nodes with remote config"                     , `Quick,  test_add_remove_nodes_remote_config ; 
+    "Test add/remove remote node in local only config"                    ,   test_add_remove_remote_nodes_in_local_config ;
+    "Test add/remove remote nodes with remote config"                     ,   test_add_remove_nodes_remote_config ; 
 
-    "Test selective receive with local only config"                       , `Quick,  test_selective_receive_local_config ;
-    "Test selective_receive local with remoteconfig"                      , `Quick,  test_selective_receive_local_remote_config ;
-    "Test selective receive remote with remote config"                    , `Quick,  test_selective_receive_remote_remote_config ;
+    "Test selective receive with local only config"                       ,   test_selective_receive_local_config ;
+    "Test selective_receive local with remoteconfig"                      ,   test_selective_receive_local_remote_config ;
+    "Test selective receive remote with remote config"                    ,   test_selective_receive_remote_remote_config ;
 
-    "Test multiple run node calls"                                        , `Quick,  test_multiple_run_node ;
+    "Test multiple run node calls"                                        ,   test_multiple_run_node ;
 
-    "Test get_remote_node local only"                                     , `Quick,  test_get_remote_node_local_only ;
-    "Test get_remote_node local with remote config"                       , `Quick,  test_get_remote_node_local_remote_config ;
-    "Test get_remote_node_remote remote config"                           , `Quick,  test_get_remote_node_remote_remote_config ;
-
-    "Test heartbeat"                                                      , `Quick,  test_heart_beat ;
+    "Test get_remote_node local only"                                     ,   test_get_remote_node_local_only ;
+    "Test get_remote_node local with remote config"                       ,   test_get_remote_node_local_remote_config ;
+    "Test get_remote_node_remote remote config"                           ,   test_get_remote_node_remote_remote_config ;    
   ]
 
 (* slightly modified version of reporter defined in Logs_lwt manual : http://erratique.ch/software/logs/doc/Logs_lwt.html#report_ex*)
@@ -2122,7 +1976,6 @@ let log_it_quiet _ = Lwt.return ()
 let _ =
   Logs.Src.set_level log_src (Some Logs.Debug) ;
   Logs.set_reporter @@ lwt_reporter log_it_quiet ;
-  try ignore @@ Alcotest.run "Test Distributed" [ "test suite", suite; ]
-  with _ -> (Alcotest.fail @@ "Encountered exception during test run : " ^ Printexc.get_backtrace ())  
+  run_tests "Test Distributed" suite ;   
 
 (*BISECT-IGNORE-END*)
