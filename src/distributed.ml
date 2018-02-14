@@ -199,8 +199,6 @@ end
 module type Process = sig
   exception Init_more_than_once
 
-  exception Empty_matchers    
-
   exception InvalidNode of Node_id.t
 
   exception Local_only_mode
@@ -211,7 +209,7 @@ module type Process = sig
 
   type message_type    
 
-  type 'a matcher
+  type 'a matcher_list
 
   type monitor_ref
 
@@ -247,13 +245,15 @@ module type Process = sig
 
   val spawn : ?monitor:bool -> Node_id.t -> (unit -> unit t) -> (Process_id.t * monitor_ref option) t 
 
-  val case : (message_type -> (unit -> 'a t) option) -> 'a matcher
+  val case : (message_type -> (unit -> 'a t) option) -> 'a matcher_list
 
-  val termination_case : (monitor_reason -> 'a t) -> 'a matcher
+  val termination_case : (monitor_reason -> 'a t) -> 'a matcher_list
 
-  val receive : ?timeout_duration:float -> 'a matcher list -> 'a option t
+  val (|.) : 'a matcher_list -> 'a matcher_list -> 'a matcher_list
 
-  val receive_loop : ?timeout_duration:float -> bool matcher list -> unit t    
+  val receive : ?timeout_duration:float -> 'a matcher_list -> 'a option t
+
+  val receive_loop : ?timeout_duration:float -> bool matcher_list -> unit t    
 
   val send : Process_id.t -> message_type -> unit t
 
@@ -285,8 +285,6 @@ end
 
 module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_type = M.t and type 'a io = 'a I.t) = struct    
   exception Init_more_than_once    
-
-  exception Empty_matchers
 
   exception InvalidNode of Node_id.t
 
@@ -359,6 +357,9 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
   and 'a t = (node_state * Process_id.t) -> (node_state * Process_id.t * 'a) io                    
 
   type 'a matcher = (message -> (unit -> 'a t) option)                 
+
+  type 'a matcher_list = Matcher of 'a matcher
+                       | Matchers of 'a matcher * 'a matcher_list
 
   let initalised = ref false    
 
@@ -833,19 +834,25 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
             fail @@ InvalidNode node_id              
           end 
 
-  let case (match_fn:(message_type -> (unit -> 'a t) option)) : 'a matcher =
+  let case (match_fn:(message_type -> (unit -> 'a t) option)) : 'a matcher_list =
     let matcher = function
       | Data (_,_,msg) -> match_fn msg
       | _ -> None in
-    matcher      
+    Matcher matcher      
 
-  let termination_case (handler_fn:(monitor_reason -> 'a t)) : 'a matcher = 
+  let termination_case (handler_fn:(monitor_reason -> 'a t)) : 'a matcher_list = 
     let matcher = function
       | Exit (_,reason) -> Some (fun () -> handler_fn reason)
       | _ -> None in
-    matcher     
+    Matcher matcher
+    
+  let rec (|.) (first_matchers : 'a matcher_list) (second_matchers : 'a matcher_list) : 'a matcher_list =
+    match first_matchers, second_matchers with
+    | Matcher matcher, Matcher matcher' -> Matchers (matcher, Matcher matcher')
+    | Matcher matcher, Matchers (matcher', matchers) -> Matchers (matcher, Matchers (matcher', matchers))
+    | Matchers (matcher, matchers), matchers' -> Matchers (matcher, matchers |. matchers')    
 
-  let receive ?timeout_duration (matchers : 'a matcher list)  : 'a option t =
+  let receive ?timeout_duration (matchers : 'a matcher_list)  : 'a option t =
     let open I in
     let temp_stream,temp_push_fn = create_stream () in
     let result = ref None in
@@ -855,22 +862,22 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       mailbox_cleaned_up := true ;
       let mailbox',old_push_fn = Hashtbl.find ns.mailboxes (Process_id.get_id pid) in
       temp_push_fn None ; (* close new stream so we can append new and old *)
-      Hashtbl.replace ns.mailboxes (Process_id.get_id pid) (stream_append temp_stream mailbox', old_push_fn) in        
+      Hashtbl.replace ns.mailboxes (Process_id.get_id pid) (stream_append temp_stream mailbox', old_push_fn) in 
+      
+    let test_match ns pid matcher candidate_msg no_match_fn =
+      match matcher candidate_msg with
+      | None -> no_match_fn ()
+      | Some fn ->
+        begin
+          restore_mailbox ns pid ; 
+          result := Some (fn ()) ; 
+          true
+        end in                              
 
     let rec iter_fn ns pid match_fns candidate_msg =
       match match_fns with
-      | [] -> (temp_push_fn (Some candidate_msg)) ; false
-      | matcher::xs ->
-        begin
-          match matcher candidate_msg with
-          | None -> iter_fn ns pid xs candidate_msg
-          | Some fn ->
-            begin
-              restore_mailbox ns pid ; 
-              result := Some (fn ()) ; 
-              true
-            end   
-        end in
+      | Matcher matcher -> test_match ns pid matcher candidate_msg (fun () -> (temp_push_fn (Some candidate_msg)) ; false)        
+      | Matchers (matcher,xs) -> test_match ns pid matcher candidate_msg (fun () -> iter_fn ns pid xs candidate_msg) in
 
     let rec iter_stream iter_fn stream =
       get stream >>= fun v ->
@@ -883,75 +890,64 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
       return (ns', pid', Some result') in
 
     fun (ns,pid) ->
-      if matchers = []
-      then 
-        begin
-          log_msg ~pid:(Process_id.get_id pid) ns Error "receiving" 
-            (fun () -> 
-              Format.fprintf ns.log_formatter "receiver process " ;
-              Process_id.print_string_of_pid pid ns.log_formatter ;
-              Format.fprintf ns.log_formatter ", called with empty list of matchers") >>= fun () ->            
-          fail Empty_matchers
-        end
-      else
-        match timeout_duration with
-        | None -> 
-          catch 
-            (fun () ->
-               log_msg ~pid:(Process_id.get_id pid) ns Debug "receiving with no time out" 
-                 (fun () -> Format.fprintf ns.log_formatter "receiver process " ; Process_id.print_string_of_pid pid ns.log_formatter) >>= fun () ->              
-               do_receive_blocking (ns,pid) >>= fun (ns',pid',res) ->
-               log_msg ~pid:(Process_id.get_id pid) ns Debug "successfully received and processed message with no time out" 
-                 (fun () -> Format.fprintf ns.log_formatter "receiver process " ; Process_id.print_string_of_pid pid ns.log_formatter) >>= fun () ->
-               return (ns',pid',res)
-            )
-            (fun e ->
-               if not !mailbox_cleaned_up then restore_mailbox ns pid else ();
-               log_msg ~pid:(Process_id.get_id pid) ns ~exn:e Error "receiving with no time out failed" 
-                 (fun () -> 
-                    Format.fprintf ns.log_formatter "receiver process " ;
-                    Process_id.print_string_of_pid pid ns.log_formatter ;
-                    Format.fprintf ns.log_formatter ", encountred exception") >>= fun () ->
-               fail e
-            )          
-        | Some timeout_duration' ->
-          log_msg ~pid:(Process_id.get_id pid) ns Debug "receiving with time out" 
-            (fun () -> 
-              Format.fprintf ns.log_formatter "receiver process " ;
-              Process_id.print_string_of_pid pid ns.log_formatter ; 
-              Format.fprintf ns.log_formatter ", time out %f" timeout_duration') >>= fun () ->            
-          catch 
-            (fun () -> 
-               pick [do_receive_blocking (ns,pid) ; timeout timeout_duration' ] >>= fun (ns',pid',res) ->
-               log_msg ns ~pid:(Process_id.get_id pid) Debug "successfully received and processed a message with time out" 
-                 (fun () -> 
-                    Format.fprintf ns.log_formatter "receiver process " ;
-                    Process_id.print_string_of_pid pid ns.log_formatter ; 
-                    Format.fprintf ns.log_formatter ", time out %f" timeout_duration') >>= fun () ->
-               return (ns', pid', res)
-            )
-            (fun e ->
-               if not !mailbox_cleaned_up then restore_mailbox ns pid else ();
-               match e with 
-               | Timeout -> 
-                 begin
-                   log_msg ~pid:(Process_id.get_id pid) ns Debug "receive timed out" 
-                     (fun () -> 
-                        Format.fprintf ns.log_formatter "receiver process " ;
-                        Process_id.print_string_of_pid pid ns.log_formatter ; 
-                        Format.fprintf ns.log_formatter ", time out %f" timeout_duration') >>= fun () ->
-                   return (ns,pid, None)
-                 end
-               | e ->
-                 log_msg ~pid:(Process_id.get_id pid) ns ~exn:e Error "receiving with time out failed" 
-                   (fun () -> 
+      match timeout_duration with
+      | None -> 
+        catch 
+          (fun () ->
+              log_msg ~pid:(Process_id.get_id pid) ns Debug "receiving with no time out" 
+                (fun () -> Format.fprintf ns.log_formatter "receiver process " ; Process_id.print_string_of_pid pid ns.log_formatter) >>= fun () ->              
+              do_receive_blocking (ns,pid) >>= fun (ns',pid',res) ->
+              log_msg ~pid:(Process_id.get_id pid) ns Debug "successfully received and processed message with no time out" 
+                (fun () -> Format.fprintf ns.log_formatter "receiver process " ; Process_id.print_string_of_pid pid ns.log_formatter) >>= fun () ->
+              return (ns',pid',res)
+          )
+          (fun e ->
+              if not !mailbox_cleaned_up then restore_mailbox ns pid else ();
+              log_msg ~pid:(Process_id.get_id pid) ns ~exn:e Error "receiving with no time out failed" 
+                (fun () -> 
+                  Format.fprintf ns.log_formatter "receiver process " ;
+                  Process_id.print_string_of_pid pid ns.log_formatter ;
+                  Format.fprintf ns.log_formatter ", encountred exception") >>= fun () ->
+              fail e
+          )          
+      | Some timeout_duration' ->
+        log_msg ~pid:(Process_id.get_id pid) ns Debug "receiving with time out" 
+          (fun () -> 
+            Format.fprintf ns.log_formatter "receiver process " ;
+            Process_id.print_string_of_pid pid ns.log_formatter ; 
+            Format.fprintf ns.log_formatter ", time out %f" timeout_duration') >>= fun () ->            
+        catch 
+          (fun () -> 
+              pick [do_receive_blocking (ns,pid) ; timeout timeout_duration' ] >>= fun (ns',pid',res) ->
+              log_msg ns ~pid:(Process_id.get_id pid) Debug "successfully received and processed a message with time out" 
+                (fun () -> 
+                  Format.fprintf ns.log_formatter "receiver process " ;
+                  Process_id.print_string_of_pid pid ns.log_formatter ; 
+                  Format.fprintf ns.log_formatter ", time out %f" timeout_duration') >>= fun () ->
+              return (ns', pid', res)
+          )
+          (fun e ->
+              if not !mailbox_cleaned_up then restore_mailbox ns pid else ();
+              match e with 
+              | Timeout -> 
+                begin
+                  log_msg ~pid:(Process_id.get_id pid) ns Debug "receive timed out" 
+                    (fun () -> 
                       Format.fprintf ns.log_formatter "receiver process " ;
                       Process_id.print_string_of_pid pid ns.log_formatter ; 
                       Format.fprintf ns.log_formatter ", time out %f" timeout_duration') >>= fun () ->
-                 fail e
-            ) 
+                  return (ns,pid, None)
+                end
+              | e ->
+                log_msg ~pid:(Process_id.get_id pid) ns ~exn:e Error "receiving with time out failed" 
+                  (fun () -> 
+                    Format.fprintf ns.log_formatter "receiver process " ;
+                    Process_id.print_string_of_pid pid ns.log_formatter ; 
+                    Format.fprintf ns.log_formatter ", time out %f" timeout_duration') >>= fun () ->
+                fail e
+          ) 
 
-  let rec receive_loop ?timeout_duration (matchers : bool matcher list) : unit t =
+  let rec receive_loop ?timeout_duration (matchers : bool matcher_list) : unit t =
     let open I in
     fun (ns,pid) ->
       (receive ?timeout_duration matchers) (ns,pid) >>= fun (ns',pid',res) ->

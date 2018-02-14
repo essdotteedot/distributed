@@ -10,7 +10,7 @@ let config = D.Remote { D.Remote_config.node_name = "pong_node" ;
 let counter = ref 0
 
 let pong () = D.(
-    receive_loop [
+    receive_loop @@
       case (function
           | Ping_message.Ping s -> Some (fun () -> 
               lift_io (Lwt_io.printl @@ Format.sprintf "Got message Ping %s" s) >>= fun () ->
@@ -28,8 +28,7 @@ let pong () = D.(
           | v -> Some (fun () -> 
               lift_io (Lwt_io.printl @@ Format.sprintf "Got unexpected message %s" (Ping_message.string_of_message v)) >>= fun () ->
               assert false)
-        ) 
-    ] 
+        )     
   )
 
 let () =

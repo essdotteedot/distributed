@@ -39,13 +39,13 @@ let rec add_forever add_pid () = D.(
     let x = Random.int 100 in
     let y = Random.int 100 in
     add_pid >! (Message.Add (x, y, self_pid)) >>= fun () ->
-    receive ~timeout_duration:0.5 [
+    receive ~timeout_duration:0.5 @@
       case (function
           | Message.Add_result r -> Some (fun () -> 
               lift_io (Lwt_io.printlf "Sucessfully added %d and %d, result of %d." x y r))             
           | _ -> None
         )            
-    ] >>= function
+    >>= function
     | None -> 
       lift_io (Lwt_io.printlf "Failed to result in time for add request of %d + %d." x y)
     | _ -> 
@@ -56,12 +56,12 @@ let rec add_forever add_pid () = D.(
 let rec find_remote_process add_node () = D.(
     get_self_pid >>= fun self_pid ->
     broadcast add_node (Message.Whois ("add_process", self_pid)) >>= fun () ->    
-    receive ~timeout_duration:0.5 [
+    receive ~timeout_duration:0.5 @@
       case (function 
           | Message.Whois_result add_pid -> Some (fun () -> return add_pid)          
           | _ -> None
         )         
-    ] >>= function
+    >>= function
     | None ->
       lift_io (Lwt_io.printl "Failed to lookup remote add process in time.") >>= fun () ->
       fail Failed_to_lookup
@@ -72,15 +72,16 @@ let rec find_remote_process add_node () = D.(
       lift_io (Lwt_io.printl "Successfully added remote add node.") >>= fun () ->
       get_self_node >>= fun self_node ->
       spawn ~monitor:true self_node (add_forever add_pid) >>= fun _ ->
-      receive_loop [
-        termination_case (function
-            | _ -> lift_io (Lwt_io.printl "Add process died, querying for remote add process id then respawning.") >>= fun () ->
-              lift_io (Lwt_unix.sleep 1.0) >>= fun () ->
-              return false
-          ) ;
-        case 
-          (fun _ -> Some (fun () -> return true))
-      ] >>= fun _ ->      
+      receive_loop
+        begin
+          termination_case (function _ -> 
+            lift_io (Lwt_io.printl "Add process died, querying for remote add process id then respawning.") >>= fun () ->
+            lift_io (Lwt_unix.sleep 1.0) >>= fun () ->
+            return false
+          )
+          |. case (fun _ -> Some (fun () -> return true))
+        end
+      >>= fun _ ->      
       find_remote_process add_node ()
   )   
 
@@ -98,15 +99,12 @@ let rec main_proc () = D.(
       ) 
     >>= fun name_server_node_id ->
     spawn ~monitor:true self_node_id (find_remote_process name_server_node_id) >>= fun _ ->        
-    receive_loop [
-      termination_case (function
-          | _ -> 
-            lift_io (Lwt_io.printl "Add process died, respawning it") >>= fun () ->
-            return false          
-        ) ;
-      case 
-        (fun _ -> Some (fun () -> return true))
-    ] >>= fun _ ->
+    receive_loop
+        begin
+          termination_case (function _ -> lift_io (Lwt_io.printl "Add process died, respawning it") >>= fun () -> return false)
+          |. case (fun _ -> Some (fun () -> return true))
+        end
+    >>= fun _ ->
     main_proc ()
   )  
 

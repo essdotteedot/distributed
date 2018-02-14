@@ -12,14 +12,14 @@ let rec ping_loop (counter : int) () = D.(
     | None -> lift_io (Lwt_io.printl "Remote node pong is not up, exiting")
     | Some node' ->         
       broadcast node' (Ping_message.Ping (string_of_int counter)) >>= fun () ->
-      receive [
+      receive @@
         case (function 
             | Ping_message.Pong s -> Some (fun () -> lift_io (Lwt_io.printl @@ Format.sprintf "Got message Pong %s" s))
             | v -> Some (fun () ->
                 lift_io (Lwt_io.printl @@ Format.sprintf "Got unexpected message %s" (Ping_message.string_of_message v)) >>= fun () ->
                 assert false)
           )  
-      ] >>= fun _ ->    
+      >>= fun _ ->    
       lift_io (Lwt_unix.sleep 1.0) >>= fun () ->  
       ping_loop (counter + 1) ()
   )

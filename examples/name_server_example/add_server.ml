@@ -27,19 +27,19 @@ let process_add_request name_server_node () = D.(
     get_self_pid >>= fun self_pid ->    
     lift_io (Lwt_io.printl "Add process is registering itself with the name server.") >>= fun () ->
     broadcast name_server_node (Message.Register ("add_process", self_pid)) >>= fun () ->
-    receive ~timeout_duration:0.5 [
+    receive ~timeout_duration:0.5 @@
       case (function 
         | Message.Register_ok -> Some (fun () ->
             lift_io (Lwt_io.printl "Add process successfully registered with the name server.") >>= fun () -> 
             return ()) 
         | _ -> None
       )                
-    ] >>= function
+    >>= function
     | None ->
       lift_io (Lwt_io.printl "Add process failed to get ok response for registration request.") >>= fun () ->
       fail Failed_to_register
     | _ ->
-      receive_loop [
+      receive_loop @@
         case (function
             | Message.Add (x, y, requester_pid) -> Some (fun () ->
                 requester_pid >! (Message.Add_result (x+y)) >>= fun () ->
@@ -48,8 +48,7 @@ let process_add_request name_server_node () = D.(
             | m -> Some (fun () -> 
                 lift_io (Lwt_io.printlf "Add process ignoring message %s." (Message.string_of_message m)) >>= fun () -> 
                 return true)
-          )
-      ]
+          )      
   )   
 
 let rec main_proc () = D.(
@@ -63,15 +62,12 @@ let rec main_proc () = D.(
       ) 
     >>= fun name_server_node_id ->
     spawn ~monitor:true self_node_id (process_add_request name_server_node_id) >>= fun _ ->        
-    receive_loop [
-      termination_case (function
-          | _ -> 
-            lift_io (Lwt_io.printlf"Add process died, respawning it.") >>= fun () ->
-            return false
-        ) ;
-      case 
-        (fun _ -> Some (fun () -> return true))
-    ] >>= fun _ ->
+    receive_loop
+      begin
+        termination_case (function _ -> lift_io (Lwt_io.printlf"Add process died, respawning it.") >>= fun () -> return false)
+        |. case  (fun _ -> Some (fun () -> return true))
+      end
+    >>= fun _ ->
     main_proc ()
   )  
 

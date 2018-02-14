@@ -90,7 +90,7 @@ let consumer_proc master_pid () = D.(
 
        The other matcher creation function is 'termination_case' which is used in the producer below. 
     *)
-    receive_loop [
+    receive_loop @@
       case (function 
           | M.Ping as v -> Some (fun () -> 
               send master_pid M.Pong >>= fun () -> 
@@ -114,8 +114,7 @@ let consumer_proc master_pid () = D.(
               lift_io @@ Lwt_io.printlf "got unexpected message %s from remote node" @@ M.string_of_message v >>= fun () ->
               return true 
             )                
-        )
-    ] 
+        ) 
   ) 
 
 let producer_proc () = D.(
@@ -147,36 +146,37 @@ let producer_proc () = D.(
     let processes_terminated = ref 0 in         
 
     (* process messages that are sent to us *)
-    receive_loop [
-      case (function 
-          | M.Pong as v -> Some (fun () -> 
-              lift_io @@ Lwt_io.printlf "got message %s from remote node" (M.string_of_message v) >>= fun () ->
-              return true)
-          | M.Incr_res r -> Some (fun () -> 
-              lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message (M.Incr_res r) >>= fun () ->
-              return true)
-          | v -> Some (fun () -> 
-              lift_io @@ Lwt_io.printlf "got unexpected message %s from remote node" (M.string_of_message v) >>= fun () ->
-              return true) 
-        ) ;  
-      (* use the termination_case matcher to match against messages about the termination, either normal or exception, or previously monitored processes *)
-      termination_case (function
-          | Normal _ -> 
-            processes_terminated := !processes_terminated + 1 ;
-            lift_io (Lwt_io.printlf "remote process terminated successfully, number of remote processes terminated %d" !processes_terminated) >>= fun () ->                    
-            return (!processes_terminated < 2)
-          | Exception (_,ex) ->            
-            if (Printexc.exn_slot_name ex) = (Printexc.exn_slot_name M.Ping_ex) (* work around inability to pattern match on unmarshalled exceptions, see http://caml.inria.fr/pub/docs/manual-ocaml/libref/Marshal.html*)
-            then
-              begin 
-                processes_terminated := !processes_terminated + 1 ;
-                lift_io (Lwt_io.printlf "remote process terminated with exception, number of remote processes terminated %d" !processes_terminated) >>= fun () ->
-                return (!processes_terminated < 2)
-              end
-            else assert false
-          | _ -> assert false 
-        )       
-    ] 
+    receive_loop
+      begin
+        case (function 
+            | M.Pong as v -> Some (fun () -> 
+                lift_io @@ Lwt_io.printlf "got message %s from remote node" (M.string_of_message v) >>= fun () ->
+                return true)
+            | M.Incr_res r -> Some (fun () -> 
+                lift_io @@ Lwt_io.printlf "got message %s from remote node" @@ M.string_of_message (M.Incr_res r) >>= fun () ->
+                return true)
+            | v -> Some (fun () -> 
+                lift_io @@ Lwt_io.printlf "got unexpected message %s from remote node" (M.string_of_message v) >>= fun () ->
+                return true) 
+          )            
+        (* use the termination_case matcher to match against messages about the termination, either normal or exception, or previously monitored processes *)
+        |. termination_case (function
+            | Normal _ -> 
+              processes_terminated := !processes_terminated + 1 ;
+              lift_io (Lwt_io.printlf "remote process terminated successfully, number of remote processes terminated %d" !processes_terminated) >>= fun () ->                    
+              return (!processes_terminated < 2)
+            | Exception (_,ex) ->            
+              if (Printexc.exn_slot_name ex) = (Printexc.exn_slot_name M.Ping_ex) (* work around inability to pattern match on unmarshalled exceptions, see http://caml.inria.fr/pub/docs/manual-ocaml/libref/Marshal.html*)
+              then
+                begin 
+                  processes_terminated := !processes_terminated + 1 ;
+                  lift_io (Lwt_io.printlf "remote process terminated with exception, number of remote processes terminated %d" !processes_terminated) >>= fun () ->
+                  return (!processes_terminated < 2)
+                end
+              else assert false
+            | _ -> assert false 
+        )
+      end           
   )                                                                  
 
 let () =

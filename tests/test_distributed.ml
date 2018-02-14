@@ -227,9 +227,9 @@ let test_spawn_remote_remote_config _ =
       get_self_pid >>= fun pid_to_send_to ->
       assert_equal "process should not have spawned yet" true (!spawn_res = None) ;
       spawn (List.hd nodes) (fun () -> Consumer.send pid_to_send_to "spawned") >>= fun (_, mon_res) ->      
-      receive ~timeout_duration:0.05 [
+      receive ~timeout_duration:0.05 @@
         case (fun v -> Some (fun () -> return v))
-      ] >>= fun msg ->
+      >>= fun msg ->
       spawn_res := msg ;
       mres := mon_res ;
       return ()                   
@@ -256,13 +256,13 @@ let test_spawn_monitor_local_local_config _ =
       get_self_node >>= fun local_node ->
       assert_equal "process should not have spawned yet" true (not @@ !result && !result_monitor = None) ;      
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (_, mon_res) ->
-      receive [
+      receive  @@
         termination_case 
           (function
             | Normal _ -> return (result_monitor := Some "got normal termination")
             | _ -> assert false
           )
-      ] >>= fun _ ->    
+      >>= fun _ ->    
       mres := mon_res ;  
       return ()        
     ) in             
@@ -288,13 +288,13 @@ let test_spawn_monitor_local_remote_config _ =
       get_self_node >>= fun local_node ->
       assert_equal "Process should not have spawned yet" true (not @@ !result && !result_monitor = None) ;      
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (_, mon_res) ->
-      receive [
+      receive @@
         termination_case 
           (function
             | Normal _ -> return (result_monitor := Some "got normal termination")
             | _ -> assert false
           )
-      ] >>= fun _ ->
+      >>= fun _ ->
       mres := mon_res ;  
       return ()             
     ) in             
@@ -332,13 +332,13 @@ let test_spawn_monitor_remote_remote_config _ =
       get_remote_nodes >>= fun nodes ->
       get_self_pid >>= fun pid_to_send_to ->
       spawn ~monitor:true (List.hd nodes) (fun () -> Consumer.send pid_to_send_to "spawned") >>= fun (_, mon_res) ->      
-      receive [
+      receive  @@
         termination_case 
           (function
             | Normal _ -> return (result_monitor := Some "got normal termination")
             | _ -> assert false
           )
-      ] >>= fun _ ->
+      >>= fun _ ->
       mres := mon_res ;  
       return ()                       
     ) in
@@ -365,13 +365,13 @@ let test_monitor_local_local_config _ =
   let result_monitor2 = ref None in
   let another_monitor_proc pid_to_monitor () = P.(
     monitor pid_to_monitor >>= fun _ ->
-    receive [
+    receive  @@
       termination_case
         (function
           | Normal _ -> return (result_monitor2 := Some "got normal termination")
           | _ -> assert false
         )
-    ] >>= fun _ -> return ()
+    >>= fun _ -> return ()
   ) in 
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
@@ -379,13 +379,13 @@ let test_monitor_local_local_config _ =
       spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
       spawn local_node (another_monitor_proc new_pid) >>= fun _ ->
       monitor new_pid >>= fun _ ->
-      receive [
+      receive  @@
         termination_case 
           (function
             | Normal _ -> return (result_monitor := Some "got normal termination")
             | _ -> assert false
           )
-      ] >>= fun _ ->
+      >>= fun _ ->
       return ()        
     ) in             
   Lwt.(test_run_wrapper "test_monitor_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
@@ -407,13 +407,13 @@ let test_monitor_local_remote_config _ =
   let result_monitor2 = ref None in
   let another_monitor_proc pid_to_monitor () = P.(
     monitor pid_to_monitor >>= fun _ ->
-    receive [
+    receive  @@
       termination_case
         (function
           | Normal _ -> return (result_monitor2 := Some "got normal termination")
           | _ -> assert false
         )
-    ] >>= fun _ -> return ()
+    >>= fun _ -> return ()
   ) in   
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
@@ -421,13 +421,13 @@ let test_monitor_local_remote_config _ =
       spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
       spawn local_node (another_monitor_proc new_pid) >>= fun _ ->
       monitor new_pid >>= fun _ ->
-      receive [
+      receive  @@
         termination_case 
           (function
             | Normal _ -> return (result_monitor := Some "got normal termination")
             | _ -> assert false
           )
-      ] >>= fun _ ->
+      >>= fun _ ->
       return ()       
     ) in             
   Lwt.(
@@ -462,13 +462,13 @@ let test_monitor_remote_remote_config _ =
   let result_monitor2 = ref None in 
   let another_monitor_proc pid_to_monitor () = Producer.(
     monitor pid_to_monitor >>= fun _ ->
-    receive [
+    receive  @@
       termination_case
         (function
           | Normal _ -> return (result_monitor2 := Some "got normal termination")
           | _ -> assert false
         )
-    ] >>= fun _ -> return ()
+    >>= fun _ -> return ()
   ) in      
   let producer_proc () = Producer.(        
       get_remote_nodes >>= fun nodes ->
@@ -476,13 +476,13 @@ let test_monitor_remote_remote_config _ =
       spawn (List.hd nodes) (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05)) >>= fun (remote_pid, _) ->
       spawn local_node (another_monitor_proc remote_pid) >>= fun _ ->
       monitor remote_pid >>= fun _ ->      
-      receive [
+      receive  @@
         termination_case 
           (function
             | Normal _ -> return (result_monitor := Some "got normal termination")
             | _ -> assert false
           )
-      ] >>= fun _ ->
+      >>= fun _ ->
       return ()                 
     ) in
   Lwt.(
@@ -509,13 +509,13 @@ let test_unmonitor_local_local_config _ =
   let another_monitor_proc pid_to_monitor () = P.(
     monitor pid_to_monitor >>= fun mres ->
     unmonitor mres >>= fun _ ->
-    receive ~timeout_duration:0.05 [
+    receive ~timeout_duration:0.05  @@
       termination_case
         (function
           | Normal _ -> return (unmon_res2 := Some "got normal termination")
           | _ -> assert false
         )
-    ] >>= fun _ -> return ()
+    >>= fun _ -> return ()
   ) in     
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
@@ -524,13 +524,13 @@ let test_unmonitor_local_local_config _ =
       spawn local_node (another_monitor_proc new_pid) >>= fun _ ->
       monitor new_pid >>= fun mon_res ->
       unmonitor mon_res >>= fun () ->
-      receive ~timeout_duration:0.05 [
+      receive ~timeout_duration:0.05  @@
         termination_case 
           (function
             | Normal _ -> return "got normal termination"
             | _ -> assert false
           )
-      ] >>= fun received ->
+      >>= fun received ->
       unmon_res := received ;
       return ()        
     ) in             
@@ -554,13 +554,13 @@ let test_unmonitor_local_remote_config _ =
   let another_monitor_proc pid_to_monitor () = P.(
     monitor pid_to_monitor >>= fun mres ->
     unmonitor mres >>= fun _ ->
-    receive ~timeout_duration:0.05 [
+    receive ~timeout_duration:0.05  @@
       termination_case
         (function
           | Normal _ -> return (unmon_res2 := Some "got normal termination")
           | _ -> assert false
         )
-    ] >>= fun _ -> return ()
+    >>= fun _ -> return ()
   ) in     
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
@@ -569,13 +569,13 @@ let test_unmonitor_local_remote_config _ =
       spawn local_node (another_monitor_proc new_pid) >>= fun _ ->
       monitor new_pid >>= fun mon_res ->
       unmonitor mon_res >>= fun () ->
-      receive ~timeout_duration:0.05 [
+      receive ~timeout_duration:0.05  @@
         termination_case
           (function
             | Normal _ -> return "got normal termination"
             | _ -> assert false
           )
-      ] >>= fun received ->
+      >>= fun received ->
       unmon_res := received ;
       return ()        
     ) in             
@@ -612,13 +612,13 @@ let test_unmonitor_remote_remote_config _ =
   let another_monitor_proc pid_to_monitor () = Producer.(
     monitor pid_to_monitor >>= fun mres ->
     unmonitor mres >>= fun _ ->
-    receive ~timeout_duration:0.05 [
+    receive ~timeout_duration:0.05  @@
       termination_case
         (function
           | Normal _ -> return (unmon_res2 := Some "got normal termination")
           | _ -> assert false
         )
-    ] >>= fun _ -> return ()
+    >>= fun _ -> return ()
   ) in     
   let producer_proc () = Producer.(      
       get_remote_nodes >>= fun nodes ->    
@@ -627,13 +627,13 @@ let test_unmonitor_remote_remote_config _ =
       spawn local_node (another_monitor_proc remote_pid) >>= fun _ ->
       monitor remote_pid >>= fun mon_res ->      
       unmonitor mon_res >>= fun () ->
-      receive ~timeout_duration:0.05 [
+      receive ~timeout_duration:0.05  @@
         termination_case
           (function
             | Normal _ -> return "got normal termination"
             | _ -> assert false
           )
-      ] >>= fun received ->
+      >>= fun received ->
       unmon_res := received ;     
       return ()                 
     ) in
@@ -664,13 +664,13 @@ let test_unmonitor_from_spawn_monitor_local_local_config _ =
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> result := true ; return ()) >>= fun (_, spawn_mon_res) ->
       mres := spawn_mon_res ;
       unmonitor (get_option spawn_mon_res) >>= fun () ->
-      receive ~timeout_duration:0.05 [
+      receive ~timeout_duration:0.05  @@
         termination_case
           (function
             | Normal _ -> return "got normal termination"
             | _ -> assert false
           )
-      ] >>= fun received ->
+      >>= fun received ->
       unmon_res := received ;
       return ()             
     ) in             
@@ -696,13 +696,13 @@ let test_unmonitor_from_spawn_monitor_local_remote_config _ =
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> result := true ; return ()) >>= fun (_, spawn_mon_res) ->      
       mres := spawn_mon_res ;
       unmonitor (get_option spawn_mon_res) >>= fun () ->
-      receive ~timeout_duration:0.05 [
+      receive ~timeout_duration:0.05  @@
         termination_case
           (function
             | Normal _ -> return "got normal termination"
             | _ -> assert false
           )
-      ] >>= fun received ->
+      >>= fun received ->
       unmon_res := received ;
       return ()                 
     ) in             
@@ -740,13 +740,13 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
       spawn ~monitor:true (List.hd nodes) (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05)) >>= fun (_, spawn_mon_res) ->
       mres := spawn_mon_res ;
       unmonitor (get_option spawn_mon_res) >>= fun () ->
-      receive ~timeout_duration:0.05 [
+      receive ~timeout_duration:0.05  @@
         termination_case
           (function
             | Normal _ -> return "got normal termination"
             | _ -> assert false
           )
-      ] >>= fun received ->
+      >>= fun received ->
       unmon_res := received ;
       return ()                  
     ) in
@@ -840,14 +840,16 @@ let test_broadcast_local_only _ =
   let broadcast_received = ref 0 in      
   let loop_back_received = ref None in                         
   let recv_proc () = P.(        
-      receive [
-        case (
-          function 
-          | "broadcast message" -> Some (fun () -> return (broadcast_received := !broadcast_received +1))
-          | _ -> None
-        ) ;
-        case (fun _ -> Some (fun () -> return ()))
-      ] >>= fun _ ->
+      receive 
+        begin
+          case (
+            function 
+            | "broadcast message" -> Some (fun () -> return (broadcast_received := !broadcast_received +1))
+            | _ -> None
+          )
+          |. case (fun _ -> Some (fun () -> return ()))
+        end
+      >>= fun _ ->
       return ()      
     ) in      
   let test_proc () = P.(
@@ -855,9 +857,9 @@ let test_broadcast_local_only _ =
       spawn local_node recv_proc >>= fun _ ->
       spawn local_node recv_proc >>= fun _ ->
       broadcast local_node "broadcast message" >>= fun () ->
-      receive ~timeout_duration:0.05 [
+      receive ~timeout_duration:0.05 @@
         case (fun m -> Some (fun () -> return m))       
-      ] >>= fun recv_res ->
+      >>= fun recv_res ->
       loop_back_received := recv_res ;            
       return ()
     ) in           
@@ -877,14 +879,16 @@ let test_broadcast_remote_local _ =
   let broadcast_received = ref 0 in 
   let loop_back_received = ref None in                            
   let recv_proc () = P.(        
-      receive [
-        case (
-          function 
-          | "broadcast message" -> Some (fun () -> return (broadcast_received := !broadcast_received +1))
-          | _ -> None
-        ) ;
-        case (fun _ -> Some (fun () -> return ()))
-      ] >>= fun _ ->
+      receive 
+        begin
+          case (
+            function 
+            | "broadcast message" -> Some (fun () -> return (broadcast_received := !broadcast_received +1))
+            | _ -> None
+          ) 
+          |. case (fun _ -> Some (fun () -> return ()))
+        end
+      >>= fun _ ->
       return ()      
     ) in      
   let test_proc () = P.(
@@ -892,9 +896,9 @@ let test_broadcast_remote_local _ =
       spawn local_node recv_proc >>= fun _ ->
       spawn local_node recv_proc >>= fun _ ->
       broadcast local_node "broadcast message" >>= fun () ->
-      receive ~timeout_duration:0.05 [
+      receive ~timeout_duration:0.05 @@
         case (fun m -> Some (fun () -> return m))       
-      ] >>= fun recv_res ->
+      >>= fun recv_res ->
       loop_back_received := recv_res ;      
       return ()
     ) in           
@@ -928,14 +932,16 @@ let test_broadcast_remote_remote _ =
   let broadcast_received = ref 0 in
   let loop_back_received = ref None in                             
   let recv_proc to_send_pid () = Consumer.(        
-      receive [
-        case (
-          function 
-          | "broadcast message" -> Some (fun () -> send to_send_pid "incr")
-          | _ -> None
-        ) ;
-        case (fun _ -> Some (fun _ -> return ()))
-      ] >>= fun _ ->
+      receive
+        begin
+          case (
+            function 
+            | "broadcast message" -> Some (fun () -> send to_send_pid "incr")
+            | _ -> None
+          ) 
+          |. case (fun _ -> Some (fun _ -> return ()))
+        end
+      >>= fun _ ->
       return ()      
     ) in      
   let producer_proc () = Producer.(
@@ -949,19 +955,21 @@ let test_broadcast_remote_remote _ =
       spawn (List.hd rnodes) (recv_proc my_pid) >>= fun _ ->
       broadcast (List.hd rnodes) "broadcast message" >>= fun () ->
       let rec receive_loop () =
-        receive ~timeout_duration:0.05 [
-          case (
-            function 
-            | "incr" -> Some (fun () -> return (broadcast_received := !broadcast_received +1))
-            | _ -> None
-          ) ;
-          case (
-            function
-            | "broadcast message" -> Some (fun _ -> return (loop_back_received := Some "broadcast message"))
-            | _ -> None
-          ) ;          
-          case (fun _ -> Some (fun _ -> return ()))       
-        ] >>= fun res ->
+        receive ~timeout_duration:0.05
+          begin
+            case (
+              function 
+              | "incr" -> Some (fun () -> return (broadcast_received := !broadcast_received +1))
+              | _ -> None
+            ) 
+            |. case (
+              function
+              | "broadcast message" -> Some (fun _ -> return (loop_back_received := Some "broadcast message"))
+              | _ -> None
+            )           
+            |. case (fun _ -> Some (fun _ -> return ()))       
+          end
+        >>= fun res ->
         if res = None
         then return ()
         else receive_loop ()
@@ -990,14 +998,16 @@ let test_send_local_only _ =
   let mres = ref None in       
   let send_failed = ref false in                  
   let recv_proc () = P.(        
-      receive [
-        case (
-          function 
-          | "sent message" -> Some (fun () -> return (received_message := Some "sent message"))
-          | _ -> None
-        ) ;
-        case (fun _ -> Some (fun _ -> return ()))
-      ] >>= fun _ ->
+      receive
+        begin
+          case (
+            function 
+            | "sent message" -> Some (fun () -> return (received_message := Some "sent message"))
+            | _ -> None
+          ) 
+          |. case (fun _ -> Some (fun _ -> return ()))
+        end
+      >>= fun _ ->
       return ()      
     ) in      
   let test_proc () = P.(      
@@ -1005,7 +1015,7 @@ let test_send_local_only _ =
       spawn ~monitor:true local_node recv_proc >>= fun (spawned_pid,mref) ->
       mres := mref ;
       send spawned_pid "sent message" >>= fun () ->
-      receive ~timeout_duration:0.05 [
+      receive ~timeout_duration:0.05 @@
         termination_case 
           (function
             | Normal _ -> 
@@ -1016,7 +1026,7 @@ let test_send_local_only _ =
                 )
             | _ -> return (send_failed := true)
           )        
-      ] >>= fun _ ->           
+      >>= fun _ ->           
       return ()
     ) in           
   Lwt.(test_run_wrapper "test_send_local_only" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
@@ -1037,14 +1047,16 @@ let test_send_remote_local _ =
   let mres = ref None in       
   let send_failed = ref false in                  
   let recv_proc () = P.(        
-      receive [
-        case (
-          function 
-          | "sent message" -> Some (fun () -> return (received_message := Some "sent message"))
-          | _ -> None
-        ) ;
-        case (fun _ -> Some (fun _ -> return ()))
-      ] >>= fun _ ->
+      receive
+        begin
+          case (
+            function 
+            | "sent message" -> Some (fun () -> return (received_message := Some "sent message"))
+            | _ -> None
+          ) 
+          |. case (fun _ -> Some (fun _ -> return ()))
+        end
+      >>= fun _ ->
       return ()      
     ) in      
   let test_proc () = P.(      
@@ -1052,7 +1064,7 @@ let test_send_remote_local _ =
       spawn ~monitor:true local_node recv_proc >>= fun (spawned_pid,mref) ->
       mres := mref ;
       send spawned_pid "sent message" >>= fun () ->
-      receive ~timeout_duration:0.05 [
+      receive ~timeout_duration:0.05 @@
         termination_case 
           (function
             | Normal _ -> 
@@ -1063,7 +1075,7 @@ let test_send_remote_local _ =
                 )
             | _ -> return (send_failed := true)
           )        
-      ] >>= fun _ ->           
+      >>= fun _ ->           
       return ()
     ) in           
   Lwt.(
@@ -1097,14 +1109,16 @@ let test_send_remote_remote _ =
   let sent_received = ref 0 in
   let send_failed = ref false in                               
   let recv_proc to_send_pid () = Consumer.(        
-      receive [
-        case (
-          function
-          | "sent message" -> Some (fun () -> send to_send_pid "incr")
-          | _ -> None
-        ) ;
-        case (fun _ -> Some (fun () -> return ()))
-      ] >>= fun _ ->
+      receive
+        begin
+          case (
+            function
+            | "sent message" -> Some (fun () -> send to_send_pid "incr")
+            | _ -> None
+          ) 
+          |. case (fun _ -> Some (fun () -> return ()))
+        end
+      >>= fun _ ->
       return ()      
     ) in      
   let producer_proc () = Producer.(
@@ -1120,24 +1134,24 @@ let test_send_remote_remote _ =
       send pid3 "sent message" >>= fun () ->
       send pid4 "sent message" >>= fun () ->
       let rec receive_loop () =
-        receive ~timeout_duration:0.05 [
-          case (
-            function 
-            | "incr" -> Some (fun () -> return (sent_received := !sent_received +1))
-            | _ -> None
-          ) ;
-          termination_case 
-            (function
-              | Normal term_pid -> 
-                catch 
-                  (fun () -> send term_pid "sent message")
-                  (function
-                    | _ -> return (send_failed := true)                      
-                  )
-              | _ -> return (send_failed := true)
-            ) ;                         
-          case (fun _ -> Some (fun () -> return ()))       
-        ] >>= fun res ->
+        receive ~timeout_duration:0.05
+          begin
+            case (
+              function 
+              | "incr" -> Some (fun () -> return (sent_received := !sent_received +1))
+              | _ -> None
+            )
+            |. termination_case 
+              (function
+                | Normal term_pid -> 
+                  catch 
+                    (fun () -> send term_pid "sent message")
+                    (function| _ -> return (send_failed := true))
+                | _ -> return (send_failed := true)
+              ) 
+            |. case (fun _ -> Some (fun () -> return ()))       
+          end
+        >>= fun res ->
         if res = None
         then return ()
         else receive_loop ()
@@ -1157,91 +1171,6 @@ let test_send_remote_remote _ =
     ) 
   )                               
 
-(* tests for receive with empty matchers for local and remote configurations *)
-
-let test_empty_matchers_local_only _ =
-  let module P = Distributed.Make (Test_io) (M) in  
-  let node_config = P.Local {P.Local_config.node_name = "test" ;} in  
-  let expected_exception_happened = ref false in        
-  let test_proc () = P.(      
-      catch 
-        (fun () -> receive []) 
-        (function
-          | Empty_matchers -> expected_exception_happened := true ; return None
-          | _ -> assert false
-        ) >>= fun _ ->           
-      return ()
-    ) in           
-  Lwt.(test_run_wrapper "test_empty_matchers_local_only" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
-  assert_equal "expected empty matchers exception did not occur" true !expected_exception_happened;
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)
-
-let test_empty_matchers_remote_local _ =
-  let module P = Distributed.Make (Test_io) (M) in  
-  let node_config = P.Remote { P.Remote_config.node_name = "producer" ; 
-                               P.Remote_config.local_port = 45000 ;                               
-                               P.Remote_config.connection_backlog = 10 ;
-                               P.Remote_config.node_ip = "127.0.0.1" ;
-                               P.Remote_config.remote_nodes = [] ;
-                             } in 
-  let expected_exception_happened = ref false in        
-  let test_proc () = P.(      
-      catch 
-        (fun () -> receive []) 
-        (function
-          | Empty_matchers -> expected_exception_happened := true ; return None
-          | _ -> assert false
-        ) >>= fun _ ->           
-      return ()
-    ) in            
-  Lwt.(
-    test_run_wrapper "test_empty_matchers_remote_local" (fun () -> 
-      P.run_node node_config ~process:test_proc >>= fun () -> 
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      assert_equal "expected empty matchers exception did not occur" true !expected_exception_happened;   
-      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
-      
-      return () 
-    )
-  )
-
-let test_empty_matchers_remote_remote _ =
-  let module Producer = Distributed.Make (Test_io) (M) in
-  let module Consumer = Distributed.Make (Test_io) (M) in  
-  let node_config = Producer.Remote { Producer.Remote_config.node_name = "producer" ; 
-                                      Producer.Remote_config.local_port = 45000 ;                                      
-                                      Producer.Remote_config.connection_backlog = 10 ;
-                                      Producer.Remote_config.node_ip = "127.0.0.1" ;
-                                      Producer.Remote_config.remote_nodes = [("127.0.0.1",46000,"consumer")] ;
-                                    } in
-  let remote_config = Consumer.Remote { Consumer.Remote_config.node_name = "consumer" ; 
-                                        Consumer.Remote_config.local_port = 46000 ;                                        
-                                        Consumer.Remote_config.connection_backlog = 10 ;
-                                        Consumer.Remote_config.node_ip = "127.0.0.1" ;
-                                        Consumer.Remote_config.remote_nodes = [] ;
-                                      } in
-  let expected_exception_happened = ref false in    
-  let producer_proc () = Producer.(
-      catch 
-        (fun () -> receive []) 
-        (function
-          | Empty_matchers -> expected_exception_happened := true ; return None
-          | _ -> assert false
-        ) >>= fun _ ->           
-      return ()       
-    ) in      
-  Lwt.(
-    test_run_wrapper "test_empty_matchers_remote_remote" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
-      Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      assert_equal "expected empty matchers exception did not occur" true !expected_exception_happened;   
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
-      
-      return () 
-    ) 
-  )                               
-
 (* tests for raise excpetions for local and remote configurations *)
 
 let test_raise_local_config _ =
@@ -1249,21 +1178,21 @@ let test_raise_local_config _ =
   let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let expected_exception_happened = ref false in 
   let receive_exception_proc () = P.(
-    receive [
-      case (fun _ -> Some (fun () -> fail Test_ex) ) ;
-    ] >>= fun _ -> return ()
+    receive @@
+      case (fun _ -> Some (fun () -> fail Test_ex) )
+    >>= fun _ -> return ()
   ) in
   let test_proc () = P.(                      
       get_self_node >>= fun local_node ->
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> receive_exception_proc ()) >>= fun (new_pid, _) ->
       new_pid >! "foobar" >>= fun _ ->
-      receive [
+      receive @@
         termination_case 
           (function
-            | Exception (_,Test_ex) -> return (expected_exception_happened := true) ;
+            | Exception (_,Test_ex) -> return (expected_exception_happened := true)
             | _ -> assert false
           )
-      ] >>= fun _ ->            
+      >>= fun _ ->            
       return ()        
     ) in             
   Lwt.(test_run_wrapper "test_raise_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
@@ -1280,21 +1209,21 @@ let test_raise_local_remote_config _ =
                              } in
   let expected_exception_happened = ref false in 
   let receive_exception_proc () = P.(
-    receive ~timeout_duration:0.05 [
-      case (fun _ -> Some (fun () -> fail Test_ex) ) ;
-    ] >>= fun _ -> return ()
+    receive ~timeout_duration:0.05 @@
+      case (fun _ -> Some (fun () -> fail Test_ex) )
+    >>= fun _ -> return ()
   ) in 
   let test_proc () = P.(                      
       get_self_node >>= fun local_node ->
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> receive_exception_proc ()) >>= fun (new_pid, _) ->
       new_pid >! "foobar" >>= fun _ ->
-      receive [
+      receive @@
         termination_case 
           (function
-            | Exception (_,Test_ex) -> return (expected_exception_happened := true) ;
+            | Exception (_,Test_ex) -> return (expected_exception_happened := true)
             | _ -> assert false
           )
-      ] >>= fun _ ->            
+      >>= fun _ ->            
       return ()        
     ) in        
   Lwt.(
@@ -1329,16 +1258,16 @@ let test_raise_remote_remote_config _ =
                                       } in
   let expected_exception_happened = ref false in                                 
   let receive_exception_proc () = Consumer.(
-      receive [
-        case (fun _ -> Some (fun () -> fail Test_ex) ) ;
-      ] >>= fun _ -> return ()
+      receive @@
+        case (fun _ -> Some (fun () -> fail Test_ex) )
+      >>= fun _ -> return ()
     ) in 
   let producer_proc () = Producer.(
       get_remote_nodes >>= fun nodes ->
       get_self_pid >>= fun _ ->
       spawn ~monitor:true (List.hd nodes) (Consumer.(fun () -> return () >>= fun () -> receive_exception_proc ())) >>= fun (remote_pid, _) ->      
       remote_pid >! "foobar" >>= fun _ ->
-      receive [
+      receive @@
         termination_case 
           (function
             | Exception (_,ex) ->
@@ -1349,7 +1278,7 @@ let test_raise_remote_remote_config _ =
               end 
             | _ -> assert false
           )
-      ] >>= fun _ ->
+      >>= fun _ ->
       return ()                       
     ) in
   Lwt.(
@@ -1375,21 +1304,21 @@ let test_monitor_dead_process_local_local_config _ =
       get_self_node >>= fun local_node ->
       assert_equal "Process should not have spawned yet" true (not !result) ;
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (new_pid, _) ->
-      receive [
+      receive @@
         termination_case
         (function
           | Normal _ -> return @@ Some ()
           | _ -> assert false
         )
-      ] >>= fun _ ->
+      >>= fun _ ->
       monitor new_pid >>= fun _ ->
-      receive [
+      receive @@
         termination_case
           (function
             | NoProcess _ -> return (result_monitor := Some ("got noprocess"))
             | _ -> assert false
           )
-      ] >>= fun _ ->
+      >>= fun _ ->
       return ()        
     ) in             
   Lwt.(test_run_wrapper "test_monitor_dead_process_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
@@ -1411,21 +1340,21 @@ let test_monitor_dead_process_local_remote_config _ =
       get_self_node >>= fun local_node ->
       assert_equal "Process should not have spawned yet" true (not !result) ;
       spawn ~monitor:true local_node (fun () -> return () >>= fun _ -> return (result := true)) >>= fun (new_pid, _) ->
-      receive [
+      receive @@
         termination_case
         (function
           | Normal _ -> return @@ Some ()
           | _ -> assert false
         )
-      ] >>= fun _ ->      
+      >>= fun _ ->      
       monitor new_pid >>= fun _ ->
-      receive [
+      receive @@
         termination_case
           (function
             | NoProcess _ -> return (result_monitor := Some ("got noprocess"))
             | _ -> assert false
           )
-      ] >>= fun _ ->
+      >>= fun _ ->
       return ()        
     ) in             
   Lwt.(
@@ -1459,21 +1388,21 @@ let test_monitor_dead_process_remote_remote_config _ =
   let producer_proc () = Producer.(
       get_remote_nodes >>= fun nodes ->
       spawn ~monitor:true (List.hd nodes) (fun () -> return () >>= fun () -> return ()) >>= fun (remote_pid, _) ->
-      receive [
+      receive @@
         termination_case
         (function
           | Normal _ -> return @@ Some ()
           | _ -> assert false
         )
-      ] >>= fun _ ->
+      >>= fun _ ->
       monitor remote_pid >>= fun _ ->      
-      receive [
+      receive @@
         termination_case
           (function
             | NoProcess _ -> return (result_monitor := Some ("got noprocess"))
             | _ -> assert false
           )
-      ] >>= fun _ ->
+      >>= fun _ ->
       return ()                 
     ) in
   Lwt.(
@@ -1614,16 +1543,15 @@ let test_selective_receive_local_config _ =
   let selective_message = ref None in
   let other_messages_inorder = ref [] in  
   let receiver_proc () = P.(                      
-      receive [
+      receive @@
         case (
           function 
           | "the one" -> Some (fun () -> return (selective_message := Some "the one"))
           | _ -> None
         ) 
-      ] >>= fun _ ->
-      receive_loop ~timeout_duration:0.1 [
-        case (fun v -> Some (fun () -> other_messages_inorder := (v::(!other_messages_inorder)) ; return (v <> "0")))
-      ]         
+      >>= fun _ ->
+      receive_loop ~timeout_duration:0.1 @@
+        case (fun v -> Some (fun () -> other_messages_inorder := (v::(!other_messages_inorder)) ; return (v <> "0")))         
     ) in             
   let sender_proc receiver_pid () = P.(
       receiver_pid >! "5" >>= fun () ->
@@ -1657,16 +1585,15 @@ let test_selective_receive_local_remote_config _ =
   let selective_message = ref None in
   let other_messages_inorder = ref [] in  
   let receiver_proc () = P.(                      
-      receive [
+      receive @@
         case (
           function 
           | "the one" -> Some (fun () -> return (selective_message := Some "the one"))
           | _ -> None
         ) 
-      ] >>= fun _ ->
-      receive_loop ~timeout_duration:0.1 [
-        case (fun v -> Some (fun () -> other_messages_inorder := (v::(!other_messages_inorder)) ; return (v <> "0")))
-      ]         
+      >>= fun _ ->
+      receive_loop ~timeout_duration:0.1 @@
+        case (fun v -> Some (fun () -> other_messages_inorder := (v::(!other_messages_inorder)) ; return (v <> "0")))               
     ) in             
   let sender_proc receiver_pid () = P.(
       receiver_pid >! "5" >>= fun () ->
@@ -1721,16 +1648,16 @@ let test_selective_receive_remote_remote_config _ =
         | [] -> return ()
         | m::ms -> result_pid >! m >>= fun () -> send_all ms ()        
       in                      
-      receive [
+      receive @@
         case (
           function 
           | "the one" -> Some (fun () -> return (to_send := "the one"::!to_send))
           | _ -> None
         ) 
-      ] >>= fun _ ->
-      receive_loop ~timeout_duration:0.1 [
+      >>= fun _ ->
+      receive_loop ~timeout_duration:0.1 @@
         case (fun v -> Some (fun () -> to_send := (v::(!to_send)) ; return (v <> "0")))
-      ] >>= fun _ ->
+      >>= fun _ ->
       send_all !to_send ()         
     ) in             
   let sender_proc receiver_pid () = Producer.(
@@ -1743,9 +1670,8 @@ let test_selective_receive_remote_remote_config _ =
       receiver_pid >! "0"    
     ) in    
     let result_receiver () = Producer.(
-      receive_loop ~timeout_duration:0.1 [
-        case (fun v -> Some (fun () -> messages_inorder := (v::(!messages_inorder)) ; return (v <> "the one")))
-      ]      
+      receive_loop ~timeout_duration:0.1 @@
+        case (fun v -> Some (fun () -> messages_inorder := (v::(!messages_inorder)) ; return (v <> "the one")))           
     ) in
   let main_proc () = Producer.(
       get_self_node >>= fun self_node ->
@@ -1872,7 +1798,7 @@ let test_get_remote_node_remote_remote_config _ =
           | None -> exitent_remote_node_result := Some "fail" ; return ()
           | Some n -> 
             (spawn ~monitor:true n p2 >>= fun (_,_) ->
-             receive [termination_case (function _ -> return ())]) >>= fun _ -> return ())
+             receive @@ termination_case (function _ -> return ())) >>= fun _ -> return ())
     ) in 
 
   Lwt.(
@@ -1927,10 +1853,6 @@ let suite = [
     "Test send local with local config"                                   ,   test_send_local_only ;  
     "Test send local with remote config"                                  ,   test_send_remote_local ; 
     "Test send remote and local with remote config"                       ,   test_send_remote_remote ; 
-
-    "Test receive with empty matchers local with local config"            ,   test_empty_matchers_local_only ;  
-    "Test receive with empty matchers local with remote config"           ,   test_empty_matchers_remote_local ;
-    "Test receive with empty matchers remote with remote config"          ,   test_empty_matchers_remote_remote ;  
 
     "Test raise exception on monitored process local with local config"   ,   test_raise_local_config;
     "Test raise exception on monitored process local with remote config"  ,   test_raise_local_remote_config ;

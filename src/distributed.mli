@@ -130,7 +130,7 @@ module type Nonblock_io = sig
   (** [timeout d] is a thread that remains suspended for [d] seconds and then fails with ​{exception:Timeout}. *)
 
   val pick : 'a t list -> 'a t
-  (** [pick l] is the same as [​choose], except that it cancels all sleeping threads when one terminates. *)
+  (** [pick l] behaves as the first thread in l to terminate. If several threads are already terminated, one is chosen at random. Cancels all sleeping threads when one terminates. *)
 
   val at_exit : (unit -> unit t) -> unit
   (** [at_exit fn] will call fn on program exit. *)
@@ -153,9 +153,6 @@ module type Process = sig
   exception Init_more_than_once
   (** Exception that is raised if {!val:run_node} is called more than once. *)
 
-  exception Empty_matchers
-  (** Exception that is raised if {!val:receive} is called with an empty matchers list. *)
-
   exception InvalidNode of Node_id.t
   (** Exception that is raised when {!val:spawn}, {!val:broadcast}, {!val:monitor} are called with an invalid node or if {!val:send}
       is called with a process which resides on an unknown node.
@@ -173,8 +170,8 @@ module type Process = sig
   type message_type
   (** The abstract type representing the messages that will be sent between processes. *) 
 
-  type 'a matcher
-  (** The abstract type representing a matcher to be used with {!val:receive} function. *)  
+  type 'a matcher_list
+  (** The abstract type representing a non-empty list of matchers to be used with {!val:receive} function. *)
 
   type monitor_ref
   (** The abstract type representing a monitor_ref that is returned when a processes is monitored and can be used to unmonitor it. *)   
@@ -230,14 +227,14 @@ module type Process = sig
       If [node_id] is an unknown node then {!exception:InvalidNode} exception is raised.
   *) 
 
-  val case : (message_type -> (unit -> 'a t) option) -> 'a matcher
-  (** [case match_fn] will create a {!type:matcher} which will use [match_fn] to match on potential messages.
+  val case : (message_type -> (unit -> 'a t) option) -> 'a matcher_list
+  (** [case match_fn] will create a {!type:matcher_list} which will use [match_fn] to match on potential messages.
       [match_fn] should return [None] to indicate no match or [Some handler] where [handler] is the function
       that should be called to handle the matching message.
   *)
 
-  val termination_case : (monitor_reason -> 'a t) -> 'a matcher
-  (** [termination_case handler] will create a [matcher] which can use used to match against [termination_reason] for a 
+  val termination_case : (monitor_reason -> 'a t) -> 'a matcher_list
+  (** [termination_case handler] will create a {!type:matcher_list} which can use used to match against [termination_reason] for a 
       process that is being monitored. If this process is monitoring another process then providing this matcher in the list
       of matchers to {!val:receive} will allow this process to act on the termination of the monitored process.
 
@@ -251,7 +248,12 @@ module type Process = sig
       See http://caml.inria.fr/pub/docs/manual-ocaml/libref/Marshal.html.  
   *)
 
-  val receive : ?timeout_duration:float -> 'a matcher list -> 'a option t 
+  val (|.) : 'a matcher_list -> 'a matcher_list -> 'a matcher_list
+  (** [a_matcher |. b_matcher] is a {!type:matcher_list} consiting of the matchers in [a_matcher] followed by the matchers 
+      in [b_matcher].
+   *)
+
+  val receive : ?timeout_duration:float -> 'a matcher_list -> 'a option t 
   (** [receive timeout matchers] will wait for a message to be sent to this process which matches one of matchers provided in
       [matchers]. The first matching matcher in [matchers] will used process the matching message returning [Some result] where
       [result] is result of the matcher processing the matched message. All the other non-matching messages are left in the same
@@ -262,7 +264,7 @@ module type Process = sig
       If the [matchers] is empty then an {!exception:Empty_matchers} exception is raised.
   *)   
 
-  val receive_loop : ?timeout_duration:float -> bool matcher list -> unit t
+  val receive_loop : ?timeout_duration:float -> bool matcher_list -> unit t
   (** [receive_loop timeout matchers] is a convenience function which will loop until a matcher in [matchers] returns false. *)
 
   val send : Process_id.t -> message_type -> unit t
