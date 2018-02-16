@@ -1,23 +1,22 @@
-platform:
-  - x86
+# AppVeyor config using https://github.com/Chris00/ocaml-appveyor
+# build using jbuilder => ocaml >= 4.05
 
 environment:
   FORK_USER: ocaml
   FORK_BRANCH: master
   CYG_ROOT: C:\cygwin64
 
-  global:
-    - PINS="distributed:. distributed-lwt:. lwt:https://github.com/ocsigen/lwt.git\#safer-semantics"   
   matrix:
-    - OPAM_SWITCH: 4.02+mingw64c   PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"
-    - OPAM_SWITCH: 4.03.0+mingw64c PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"
-    - OPAM_SWITCH: 4.04+mingw64c   PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"     
-    - OPAM_SWITCH: 4.05+mingw64c   PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"    
-    - OPAM_SWITCH: 4.06+mingw64c   PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh" 
+    - OPAM_SWITCH: 4.05
+    - OPAM_SWITCH: 4.06
 
 install:
-  - ps: iex ((new-object net.webclient).DownloadString("https://raw.githubusercontent.com/$env:FORK_USER/ocaml-ci-scripts/$env:FORK_BRANCH/appveyor-install.ps1"))
+  - appveyor DownloadFile "https://raw.githubusercontent.com/Chris00/ocaml-appveyor/master/install_ocaml.cmd" -FileName "C:\install_ocaml.cmd"
+  - C:\install_ocaml.cmd
 
 build_script:
-  - call %CYG_ROOT%\bin\bash.exe -l %APPVEYOR_BUILD_FOLDER%\appveyor-opam.sh
+  - cd "%APPVEYOR_BUILD_FOLDER%"
+  - jbuilder subst
+  - jbuilder build -p distributed-lwt
+  - jbuilder runtest -p distributed-lwt
   
