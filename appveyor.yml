@@ -6,13 +6,6 @@ environment:
   FORK_BRANCH: master
   CYG_ROOT: C:\cygwin64
 
-install:
-  - ps: iex ((new-object net.webclient).DownloadString("https://raw.githubusercontent.com/$env:FORK_USER/ocaml-ci-scripts/$env:FORK_BRANCH/appveyor-install.ps1"))
-
-build_script:
-  - call %CYG_ROOT%\bin\bash.exe -l %APPVEYOR_BUILD_FOLDER%\appveyor-opam.sh
-
-environment:
   global:
     - PINS="distributed:. distributed-lwt:. lwt:https://github.com/ocsigen/lwt.git\#safer-semantics"   
   matrix:
@@ -21,3 +14,10 @@ environment:
     - OPAM_SWITCH: 4.04+mingw64c   PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"     
     - OPAM_SWITCH: 4.05+mingw64c   PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"    
     - OPAM_SWITCH: 4.06+mingw64c   PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh" 
+
+install:
+  - ps: iex ((new-object net.webclient).DownloadString("https://raw.githubusercontent.com/$env:FORK_USER/ocaml-ci-scripts/$env:FORK_BRANCH/appveyor-install.ps1"))
+
+build_script:
+  - call %CYG_ROOT%\bin\bash.exe -l %APPVEYOR_BUILD_FOLDER%\appveyor-opam.sh
+  
