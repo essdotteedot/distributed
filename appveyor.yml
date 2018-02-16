@@ -17,6 +17,7 @@ install:
 build_script:
   - cd "%APPVEYOR_BUILD_FOLDER%"
   - jbuilder subst
+  - jbuilder build -p distributed
   - jbuilder build -p distributed-lwt
   - jbuilder runtest -p distributed-lwt
   
