@@ -10,8 +10,8 @@ environment:
   CYG_MIRROR: http://mirrors.kernel.org/sourceware/cygwin/
   
   matrix:
-    - OCAML_BRANCH: 4.05
-    - OCAML_BRANCH: 4.06
+    - OCAML_PORT: 4.05
+    - OCAML_PORT: 4.06
   
 cache:
   - C:\projects\opam\bootstrap
@@ -27,11 +27,10 @@ install:
   - echo Installing necessary packages for opam build 
   - C:\cygwin64\setup-x86_64.exe --root=C:\cygwin64 --quiet-mode --no-desktop --no-startmenu --packages=make,mingw64-i686-gcc-core,mingw64-x86_64-gcc-core,m4,patch
   - echo Builing OCaml
-  - cd %APPVEYOR_BUILD_FOLDER%  
-  - C:\cygwin64\bin\bash.exe -lc "make cold"
+  - C:\cygwin64\bin\bash.exe -lc "cd C:\projects\opam && make cold"
   - echo Builing opam 
-  - C:\cygwin64\bin\bash.exe -lc "make cold-install"
-  - opam switch %OCAML_BRANCH%
+  - C:\cygwin64\bin\bash.exe -lc "cd C:\projects\opam && make cold-install"
+  - opam switch %OCAML_PORT%
   - opam config env
   - opam install bisect_ppx 
 
