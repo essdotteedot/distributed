@@ -20,16 +20,14 @@ cache:
 install:
   - set DISTPROJDIR=%APPVEYOR_BUILD_FOLDER%
   - echo Distributed project dir %DISTPROJDIR%
-  - set APPVEYOR_BUILD_FOLDER=C:\projects\opam
   - cd C:\projects
-  - echo APPVEYOR_BUILD_FOLDER dir %APPVEYOR_BUILD_FOLDER%
   - git clone https://github.com/ocaml/opam.git opam
   - echo Installing necessary packages for opam build 
   - C:\cygwin64\setup-x86_64.exe --root=C:\cygwin64 --quiet-mode --no-desktop --no-startmenu --packages=make,mingw64-i686-gcc-core,mingw64-x86_64-gcc-core,m4,patch
   - echo Builing OCaml
-  - C:\cygwin64\bin\bash.exe -lc "cd C:\projects\opam && make cold"
+  - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/opam && make cold"
   - echo Builing opam 
-  - C:\cygwin64\bin\bash.exe -lc "cd C:\projects\opam && make cold-install"
+  - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/opam && make cold-install"
   - opam switch %OCAML_PORT%
   - opam config env
   - opam install bisect_ppx 
