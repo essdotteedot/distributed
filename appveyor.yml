@@ -21,7 +21,7 @@ install:
   - git clone https://github.com/ocaml/opam.git opam
   - echo Installing necessary packages for opam build 
   - C:\cygwin64\setup-x86_64.exe --root=C:\cygwin64 --quiet-mode --no-desktop --no-startmenu --packages=make,mingw64-i686-gcc-core,mingw64-x86_64-gcc-core,m4,patch
-  - call "C:\cygwin64\bin\mintty.exe -"
+  - C:\cygwin64\bin\mintty.exe -
   - echo "none /cygdrive cygdrive noacl,binary,posix=0,user 0 0" > /etc/fstab
   - echo "Building OCaml"
   - cd /cygdrive/c/projects/opam
