@@ -31,10 +31,9 @@ install:
   - echo Distributed project dir %DISTPROJDIR%
   - set APPVEYOR_BUILD_FOLDER=%cd%\opam_dir
   - echo APPVEYOR_BUILD_FOLDER dir %APPVEYOR_BUILD_FOLDER%
-  - git clone https://github.com/ocaml/opam.git opam_dir
-  - cd opam_dir
-  - call "appveyor_build.cmd" build
-  - call "appveyor_build.cmd" install
+  - git clone https://github.com/ocaml/opam.git "%APPVEYOR_BUILD_FOLDER%"
+  - call "%APPVEYOR_BUILD_FOLDER%\appveyor_build.cmd" build  
+  - call "%APPVEYOR_BUILD_FOLDER%\appveyor_build.cmd" install
   - opam install bisect_ppx 
 
 build_script:
