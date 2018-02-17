@@ -13,17 +13,16 @@ environment:
 install:
   - appveyor DownloadFile "https://raw.githubusercontent.com/Chris00/ocaml-appveyor/master/install_ocaml.cmd" -FileName "C:\install_ocaml.cmd"
   - C:\install_ocaml.cmd
-
-build_script:
   - git clone https://github.com/ocaml/opam.git opam_dir
   - cd opam_dir
-  - C:\cygwin\bin\bash.exe configure
-  - C:\cygwin\bin\make.exe lib-ext
-  - C:\cygwin\bin\make.exe
-  - C:\cygwin\bin\make.exe install
-  - cd "%APPVEYOR_BUILD_FOLDER%"  
-  - jbuilder subst
-  - jbuilder build -p distributed -j 4
-  - jbuilder build -p distributed-lwt -j 4
-  - jbuilder runtest -p distributed-lwt
+  - call "appveyor_build.cmd" build
+  - call "appveyor_build.cmd" install
+  - opam install bisect_ppx 
+
+build_script:
+  - cd "%APPVEYOR_BUILD_FOLDER%"
+  - opam pin add distributed .
+  - opam pin add distributed-lwt .
+  - opam pin add lwt https://github.com/ocsigen/lwt.git\#safer-semantics   
+  - opam install -v -t distributed-lwt
   
