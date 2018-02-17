@@ -27,6 +27,10 @@ cache:
 install:
   - appveyor DownloadFile "https://raw.githubusercontent.com/Chris00/ocaml-appveyor/master/install_ocaml.cmd" -FileName "C:\install_ocaml.cmd"
   - C:\install_ocaml.cmd
+  - set DISTPROJDIR=%APPVEYOR_BUILD_FOLDER%
+  - echo Distributed project dir %DISTPROJDIR%
+  - set APPVEYOR_BUILD_FOLDER=%cd%\opam_dir
+  - echo APPVEYOR_BUILD_FOLDER dir %APPVEYOR_BUILD_FOLDER%
   - git clone https://github.com/ocaml/opam.git opam_dir
   - cd opam_dir
   - call "appveyor_build.cmd" build
@@ -34,7 +38,7 @@ install:
   - opam install bisect_ppx 
 
 build_script:
-  - cd "%APPVEYOR_BUILD_FOLDER%"
+  - cd "%DISTPROJDIR%"
   - opam pin add distributed .
   - opam pin add distributed-lwt .
   - opam pin add lwt https://github.com/ocsigen/lwt.git\#safer-semantics   
