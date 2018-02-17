@@ -21,19 +21,21 @@ install:
   - git clone https://github.com/ocaml/opam.git opam
   - echo Installing necessary packages for opam build 
   - C:\cygwin64\setup-x86_64.exe --root=C:\cygwin64 --quiet-mode --no-desktop --no-startmenu --packages=make,mingw64-i686-gcc-core,mingw64-x86_64-gcc-core,m4,patch
-  - echo Building OCaml
-  - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/opam && make compiler OCAML_PORT=mingw64"
-  - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/opam && ./configure --without-mccs"
-  - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/opam && make lib-ext"
-  - echo Building opam 
-  - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/opam && make"
-  - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/opam && make install"
-  - opam switch %OCAML_PORT%
-  - opam config env
-  - opam install bisect_ppx 
+  - call "C:\cygwin64\bin\mintty.exe -"
+  - echo "none /cygdrive cygdrive noacl,binary,posix=0,user 0 0" > /etc/fstab
+  - echo "Building OCaml"
+  - cd /cygdrive/c/projects/opam
+  - make compiler OCAML_PORT=mingw64
+  - ./configure --without-mccs
+  - make lib-ext
+  - echo "Building opam"
+  - make
+  - make instal
 
 build_script:
   - cd "%DISTPROJDIR%"
+  - opam switch %OCAML_PORT%
+  - opam config env
   - opam pin add distributed .
   - opam pin add distributed-lwt .
   - opam pin add lwt https://github.com/ocsigen/lwt.git\#safer-semantics   
