@@ -17,7 +17,7 @@ install:
 build_script:
   - git clone https://github.com/ocaml/opam.git opam_dir
   - cd opam_dir
-  - configure
+  - C:\cygwin\bin\bash.exe configure
   - C:\cygwin\bin\make.exe lib-ext
   - C:\cygwin\bin\make.exe
   - C:\cygwin\bin\make.exe install
