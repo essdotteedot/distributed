@@ -15,9 +15,51 @@ install:
   - C:\install_ocaml.cmd
 
 build_script:
-  - cd "%APPVEYOR_BUILD_FOLDER%"
+  - cd "%APPVEYOR_BUILD_FOLDER%"  
+  - echo Cloning ocamlbuild
+  - git clone https://github.com/ocaml/ocamlbuild.git ocamlbuild_dir
+  - cd ocamlbuild_dir
+  - echo configuring ocamlbuild
+  - C:\cygwin\bin\make.exe configure OCAML_NATIVE=true
+  - echo making ocamlbuild
+  - C:\cygwin\bin\make.exe
+  - echo installing ocamlbuild
+  - C:\cygwin\bin\make.exe install
+  - cd ..  
+  - git clone https://github.com/janestreet/result.git  result_dir
+  - cd result_dir
+  - jbuilder build -p result -j 4
+  - jbuilder install
+  - cd ..
+  - git clone https://github.com/dbuenzli/topkg.git topkg_dir
+  - cd topkg_dir
+  - ocaml pkg/pkg.ml build --pkg-name topkg --dev-pkg true
+  - cd ..
+  - git clone https://github.com/ocaml-ppx/ocaml-migrate-parsetree.git ocaml_migrate_parsetree_dir
+  - cd ocaml_migrate_parsetree_dir
+  - C:\cygwin\bin\make.exe
+  - C:\cygwin\bin\make.exe install
+  - cd ..
+  - git clone https://github.com/ocaml-ppx/ppx_tools_versioned.git ppx_tools_versioned_dir
+  - cd ppx_tools_versioned_dir
+  - C:\cygwin\bin\make.exe
+  - C:\cygwin\bin\make.exe install
+  - git clone https://github.com/aantron/bisect_ppx.git bisect_ppx_dir
+  - cd bisect_ppx_dir
+  - jbuilder build -p bisect_ppx_dir -j 4
+  - jbuilder install
+  - cd ..
+  - git clone https://github.com/ocsigen/lwt.git lwt_dir
+  - cd lwt_dir
+  - ocaml src/util/configure.ml -use-libev false -use-camlp4 false
+  - jbuilder build -p lwt -j 4
+  - jbuilder install
+  - cd ..
+  - git clone https://github.com/dbuenzli/logs.git logs_dir
+  - cd logs_dir
+  - ocaml pkg/pkg.ml build --pinned true --with-lwt true
   - jbuilder subst
-  - jbuilder build -p distributed
-  - jbuilder build -p distributed-lwt
+  - jbuilder build -p distributed -j 4
+  - jbuilder build -p distributed-lwt -j 4
   - jbuilder runtest -p distributed-lwt
   
