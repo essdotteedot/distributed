@@ -30,8 +30,9 @@ install:
   - set DISTPROJDIR=%APPVEYOR_BUILD_FOLDER%
   - echo Distributed project dir %DISTPROJDIR%
   - set APPVEYOR_BUILD_FOLDER=C:\projects\opam
+  - cd C:\projects
   - echo APPVEYOR_BUILD_FOLDER dir %APPVEYOR_BUILD_FOLDER%
-  - git clone https://github.com/ocaml/opam.git %APPVEYOR_BUILD_FOLDER%
+  - git clone https://github.com/ocaml/opam.git opam
   - echo Builing opam "%APPVEYOR_BUILD_FOLDER%\appveyor_build.cmd"
   - call "%APPVEYOR_BUILD_FOLDER%\appveyor_build.cmd" install  
   - echo Installing opam "%APPVEYOR_BUILD_FOLDER%\appveyor_build.cmd"
