@@ -1,7 +1,4 @@
-# AppVeyor config using https://github.com/Chris00/ocaml-appveyor
-# build using jbuilder => ocaml >= 4.05
-
-platform:
+#platform:
   - x64
 
 image: Visual Studio 2017
@@ -17,16 +14,14 @@ environment:
   DEP_MODE: lib-ext
 
   matrix:
-    - OPAM_SWITCH: 4.05
-    - OPAM_SWITCH: 4.06
+    - OCAML_BRANCH: 4.05
+    - OCAML_BRANCH: 4.06
   
 cache:
   - C:\projects\opam\bootstrap
   - C:\projects\opam\src_ext\archives
 
 install:
-  - appveyor DownloadFile "https://raw.githubusercontent.com/Chris00/ocaml-appveyor/master/install_ocaml.cmd" -FileName "C:\install_ocaml.cmd"
-  - C:\install_ocaml.cmd
   - set DISTPROJDIR=%APPVEYOR_BUILD_FOLDER%
   - echo Distributed project dir %DISTPROJDIR%
   - set APPVEYOR_BUILD_FOLDER=C:\projects\opam
@@ -37,6 +32,8 @@ install:
   - call "%APPVEYOR_BUILD_FOLDER%\appveyor_build.cmd" install  
   - echo Installing opam "%APPVEYOR_BUILD_FOLDER%\appveyor_build.cmd"
   - call "%APPVEYOR_BUILD_FOLDER%\appveyor_build.cmd" build
+  - opam switch %OCAML_BRANCH%
+  - opam config env
   - opam install bisect_ppx 
 
 build_script:
