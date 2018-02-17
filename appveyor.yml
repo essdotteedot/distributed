@@ -13,11 +13,8 @@ environment:
     - OCAML_PORT: 4.05
     - OCAML_PORT: 4.06
   
-cache:
-  - C:\projects\opam\bootstrap
-  - C:\projects\opam\src_ext\archives
-
 install:
+  - set CYGWIN="nodosfilewarning winsymlinks:native"
   - set DISTPROJDIR=%APPVEYOR_BUILD_FOLDER%
   - echo Distributed project dir %DISTPROJDIR%
   - cd C:\projects
