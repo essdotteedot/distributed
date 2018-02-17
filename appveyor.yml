@@ -22,7 +22,8 @@ install:
   - C:\cygwin64\bin\bash.exe -lc "echo \"none /cygdrive cygdrive noacl,binary,posix=0,user 0 0\" > /etc/fstab"
   - appveyor DownloadFile "https://raw.githubusercontent.com/Chris00/ocaml-appveyor/master/install_ocaml.cmd" -FileName "C:\install_ocaml.cmd"
   - C:\install_ocaml.cmd
-  - echo Installing ocaml-mccs 
+  - echo Installing ocaml-mccs
+  - cd C:\projects 
   - git clone https://github.com/AltGr/ocaml-mccs.git ocaml-mccs
   - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/ocaml-mccs && jbuilder build."
   - echo Installing opam 
