@@ -25,7 +25,7 @@ install:
   - echo Installing ocaml-mccs
   - cd C:\projects 
   - git clone https://github.com/AltGr/ocaml-mccs.git ocaml-mccs
-  - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/ocaml-mccs && jbuilder build -p ocaml-mccs"
+  - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/ocaml-mccs && jbuilder build"
   - echo Installing opam 
   - cd C:\projects
   - git clone https://github.com/ocaml/opam.git opam
