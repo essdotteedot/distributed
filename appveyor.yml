@@ -29,7 +29,7 @@ install:
   - C:\install_ocaml.cmd
   - set DISTPROJDIR=%APPVEYOR_BUILD_FOLDER%
   - echo Distributed project dir %DISTPROJDIR%
-  - set APPVEYOR_BUILD_FOLDER=%cd%\opam_dir
+  - set APPVEYOR_BUILD_FOLDER=%cd%\opam
   - echo APPVEYOR_BUILD_FOLDER dir %APPVEYOR_BUILD_FOLDER%
   - git clone https://github.com/ocaml/opam.git opam
   - echo Builing opam "%APPVEYOR_BUILD_FOLDER%\appveyor_build.cmd"
