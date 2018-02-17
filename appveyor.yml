@@ -30,7 +30,7 @@ install:
   - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/glpk-4.35 && make"
   - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/glpk-4.35 && make install"
   - echo Installing mccs
-  - appveyor DownloadFile "http://www.i3s.unice.fr/~cpjm/misc/mccs-1.1-srcs.tgz" -FileName "mccs"
+  - appveyor DownloadFile "http://www.i3s.unice.fr/~cpjm/misc/mccs-1.1-srcs.tgz" -FileName "mccs.tar.gz"
   - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/ && gzip -d mccs.tar.gz"
   - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/ && tar -x < mccs.tar"
   - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/mccs-1.1 && make USEGLPK=1"
