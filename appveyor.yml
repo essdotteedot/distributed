@@ -9,7 +9,7 @@ image: Visual Studio 2017
 environment:
   FORK_USER: ocaml
   FORK_BRANCH: master
-  CYG_ROOT: cygwin64
+  CYG_ROOT: cygwin
   CYG_ARCH: x86_64
   OCAML_PORT: mingw64
   CYG_CACHE: C:/cygwin/var/cache/setup
@@ -31,11 +31,11 @@ install:
   - echo Distributed project dir %DISTPROJDIR%
   - set APPVEYOR_BUILD_FOLDER=%cd%\opam_dir
   - echo APPVEYOR_BUILD_FOLDER dir %APPVEYOR_BUILD_FOLDER%
-  - git clone https://github.com/ocaml/opam.git opam_dir
+  - git clone https://github.com/ocaml/opam.git opam
   - echo Builing opam
-  - call "%APPVEYOR_BUILD_FOLDER%\appveyor_build.cmd" build  
+  - call "%APPVEYOR_BUILD_FOLDER%\appveyor_build.cmd" install  
   - echo Installing opam
-  - call "%APPVEYOR_BUILD_FOLDER%\appveyor_build.cmd" install
+  - call "%APPVEYOR_BUILD_FOLDER%\appveyor_build.cmd" build
   - opam install bisect_ppx 
 
 build_script:
