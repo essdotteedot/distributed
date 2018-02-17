@@ -25,7 +25,7 @@ install:
   - echo APPVEYOR_BUILD_FOLDER dir %APPVEYOR_BUILD_FOLDER%
   - git clone https://github.com/ocaml/opam.git opam
   - echo Installing necessary packages for opam build 
-  - C:\cygwin64\bin\setup-x86_64.exe --root=C:\cygwin64 --quiet-mode --no-desktop --no-startmenu --packages=make,mingw64-i686-gcc-core,mingw64-x86_64-gcc-core,m4,patch
+  - C:\cygwin64\setup-x86_64.exe --root=C:\cygwin64 --quiet-mode --no-desktop --no-startmenu --packages=make,mingw64-i686-gcc-core,mingw64-x86_64-gcc-core,m4,patch
   - echo Builing OCaml  
   - C:\cygwin64\bin\bash.exe -lc "make cold"
   - echo Builing opam 
