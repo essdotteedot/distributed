@@ -18,6 +18,7 @@ install:
   - set CYGWIN="nodosfilewarning winsymlinks:native"
   - C:\cygwin64\setup-x86_64.exe --root=C:\cygwin64 --quiet-mode --no-desktop --no-startmenu --packages=perl,curl,diffutils,rsync,git,unzip,gzip,tar,make,mingw64-i686-gcc-core,mingw64-x86_64-gcc-core,m4,patch
   - C:\cygwin64\bin\bash.exe -lc "echo \"none /cygdrive cygdrive noacl,binary,posix=0,user 0 0\" > /etc/fstab"
+  - where flexlink
   - echo Installing opam
   - cd C:\projects
   - appveyor DownloadFile "https://github.com/fdopen/opam-repository-mingw/releases/download/0.0.0.1/opam64.tar.xz" -FileName "opam64.tar.xz" 
@@ -26,6 +27,7 @@ install:
   - C:\cygwin64\bin\bash.exe -lc "/cygdrive/c/projects/opam64/install.sh  --prefix /usr/`whoami`"  
   - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe init mingw 'https://github.com/fdopen/opam-repository-mingw.git' --comp \"$OCAML_BRANCH\"+mingw64c --switch \"$OCAML_BRANCH\"+mingw64c -y -a"
   - C:\cygwin64\bin\bash.exe -lc "eval $(/usr/`whoami`/bin/ocaml-env.exe cygwin)"
+  - where flexlink
   - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe install depext depext-cygwinports -y"
 
 build_script:
