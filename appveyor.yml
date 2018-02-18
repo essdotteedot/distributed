@@ -26,7 +26,7 @@ install:
   - C:\cygwin64\bin\bash.exe -lc "/cygdrive/c/projects/opam64/install.sh  --prefix /usr/`whoami`"  
   - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe init mingw 'https://github.com/fdopen/opam-repository-mingw.git' --comp \"$OCAML_BRANCH\"+mingw64c --switch \"$OCAML_BRANCH\"+mingw64c -y -a"
   - C:\cygwin64\bin\bash.exe -lc "eval $(/usr/`whoami`/bin/ocaml-env.exe cygwin)"
-  - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe install depext depext-cygwinports"
+  - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe install depext depext-cygwinports -y"
 
 build_script:
   - C:\cygwin64\bin\bash.exe -lc "echo distributed checkout dir is $APPVEYOR_BUILD_FOLDER"
