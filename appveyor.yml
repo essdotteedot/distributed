@@ -28,6 +28,7 @@ install:
   - C:\cygwin64\bin\bash.exe -lc "eval $(/usr/`whoami`/bin/opam.exe config env)"
 
 build_script:
+  - cd %APPVEYOR_BUILD_FOLDER%
   - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe pin add distributed . -n -y"
   - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe pin add distributed-lwt . -n -y"
   - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe pin add lwt https://github.com/ocsigen/lwt.git\#safer-semantics -n -y"
