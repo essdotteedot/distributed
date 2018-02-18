@@ -10,27 +10,21 @@ environment:
   CYG_MIRROR: http://mirrors.kernel.org/sourceware/cygwin/  
   
   matrix:
-    - OCAML_BRANCH: 4.05
-    - OCAML_BRANCH: 4.06
+    - OCAML_BRANCH: 4.05.0
+    - OCAML_BRANCH: 4.06.0
   
 install:
-  - set DISTPROJDIR=%APPVEYOR_BUILD_FOLDER%
-  - echo Distributed project dir %DISTPROJDIR%
+  - echo Installing necessary packages for opam install   
   - set CYGWIN="nodosfilewarning winsymlinks:native"
-  - echo Installing necessary packages for opam install 
-  - C:\cygwin64\setup-x86_64.exe --root=C:\cygwin64 --quiet-mode --no-desktop --no-startmenu --packages=gzip,tar,make,mingw64-i686-gcc-core,mingw64-x86_64-gcc-core,m4,patch
+  - C:\cygwin64\setup-x86_64.exe --root=C:\cygwin64 --quiet-mode --no-desktop --no-startmenu --packages=perl,curl,diffutils,rsync,git,unzip,gzip,tar,make,mingw64-i686-gcc-core,mingw64-x86_64-gcc-core,m4,patch
   - C:\cygwin64\bin\bash.exe -lc "echo \"none /cygdrive cygdrive noacl,binary,posix=0,user 0 0\" > /etc/fstab"
   - echo Installing opam 
-  - cd C:\projects
-  - git clone https://github.com/ocaml/opam.git opam
-  - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/opam && make cold"
-  - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/opam && make cold-install"    
+  - C:\cygwin64\bin\bash.exe -lc "tar -xf 'opam64.tar.xz'"
+  - C:\cygwin64\bin\bash.exe -lc "opam64/install.sh  --prefix /usr/`whoami`"
+  - C:\cygwin64\bin\bash.exe -lc "opam init mingw 'https://github.com/fdopen/opam-repository-mingw.git' --comp $(OCAML_BRANCH)+mingw64c --switch $(OCAML_BRANCH)+mingw64c"
+  - C:\cygwin64\bin\bash.exe -lc "eval $(opam config env)"
 
 build_script:
-  - cd "%DISTPROJDIR%"
-  - opam init
-  - opam switch %OCAML_BRANCH%
-  - opam config env
   - opam pin add distributed .
   - opam pin add distributed-lwt .
   - opam pin add lwt https://github.com/ocsigen/lwt.git\#safer-semantics   
