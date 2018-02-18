@@ -25,12 +25,14 @@ install:
   - C:\cygwin64\bin\bash.exe -lc "echo Username is `whoami`"
   - C:\cygwin64\bin\bash.exe -lc "/cygdrive/c/projects/opam64/install.sh  --prefix /usr/`whoami`"  
   - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe init mingw 'https://github.com/fdopen/opam-repository-mingw.git' --comp \"$OCAML_BRANCH\"+mingw64c --switch \"$OCAML_BRANCH\"+mingw64c -y -a"
-  - C:\cygwin64\bin\bash.exe -lc "eval $(/usr/`whoami`/bin/opam.exe config env)"
+  - C:\cygwin64\bin\bash.exe -lc "eval $(/usr/`whoami`/bin/ocaml-env.exe cygwin)"
+  - C:\cygwin64\bin\bash.exe -lc "usr/`whoami`/bin/opam.exe install depext depext-cygwinports"
 
 build_script:
   - C:\cygwin64\bin\bash.exe -lc "echo distributed checkout dir is $APPVEYOR_BUILD_FOLDER"
   - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe pin add distributed $APPVEYOR_BUILD_FOLDER -n -y"
   - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe pin add distributed-lwt $APPVEYOR_BUILD_FOLDER -n -y"
   - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe pin add lwt https://github.com/ocsigen/lwt.git\#safer-semantics -n -y"
+  - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe install -v -t distributed-lwt --deps-only -y"
   - C:\cygwin64\bin\bash.exe -lc "/usr/`whoami`/bin/opam.exe install -v -t distributed-lwt -y"
   
