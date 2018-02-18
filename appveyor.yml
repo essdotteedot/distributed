@@ -19,9 +19,10 @@ install:
   - C:\cygwin64\setup-x86_64.exe --root=C:\cygwin64 --quiet-mode --no-desktop --no-startmenu --packages=perl,curl,diffutils,rsync,git,unzip,gzip,tar,make,mingw64-i686-gcc-core,mingw64-x86_64-gcc-core,m4,patch
   - C:\cygwin64\bin\bash.exe -lc "echo \"none /cygdrive cygdrive noacl,binary,posix=0,user 0 0\" > /etc/fstab"
   - echo Installing opam
+  - cd C:\projects
   - appveyor DownloadFile "https://github.com/fdopen/opam-repository-mingw/releases/download/0.0.0.1/opam64.tar.xz" -FileName "opam64.tar.xz" 
-  - C:\cygwin64\bin\bash.exe -lc "tar -xf 'opam64.tar.xz'"
-  - C:\cygwin64\bin\bash.exe -lc "opam64/install.sh  --prefix /usr/`whoami`"
+  - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/ && tar -xf 'opam64.tar.xz'"
+  - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/opam64 && install.sh  --prefix /usr/`whoami`"
   - C:\cygwin64\bin\bash.exe -lc "opam init mingw 'https://github.com/fdopen/opam-repository-mingw.git' --comp $(OCAML_BRANCH)+mingw64c --switch $(OCAML_BRANCH)+mingw64c"
   - C:\cygwin64\bin\bash.exe -lc "eval $(opam config env)"
 
