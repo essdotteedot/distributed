@@ -1,3 +1,4 @@
+set -ex
 echo Installing opam
 cd /cygdrive/c/projects
 tar -xf 'opam64.tar.xz'
