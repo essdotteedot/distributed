@@ -24,8 +24,9 @@ install:
   - C:\cygwin64\bin\bash.exe -lc "cd /cygdrive/c/projects/ && tar -xf 'opam64.tar.xz'"
   - C:\cygwin64\bin\bash.exe -lc "echo Username is `whoami`"
   - C:\cygwin64\bin\bash.exe -lc "/cygdrive/c/projects/opam64/install.sh  --prefix /usr/`whoami`"
-  - C:\cygwin64\bin\bash.exe -lc "opam init mingw 'https://github.com/fdopen/opam-repository-mingw.git' --comp \"$OCAML_BRANCH\"+mingw64c --switch \"$OCAML_BRANCH\"+mingw64c"
-  - C:\cygwin64\bin\bash.exe -lc "eval $(opam config env)"
+  - C:\cygwin64\bin\bash.exe -lc "ls -l /cygdrive/c/`whoami`/bin"
+  - C:\cygwin64\bin\bash.exe -lc "opam.exe init mingw 'https://github.com/fdopen/opam-repository-mingw.git' --comp \"$OCAML_BRANCH\"+mingw64c --switch \"$OCAML_BRANCH\"+mingw64c"
+  - C:\cygwin64\bin\bash.exe -lc "eval $(opam.exe config env)"
 
 build_script:
   - opam pin add distributed .
