@@ -10,6 +10,9 @@ environment:
   CYG_MIRROR: http://mirrors.kernel.org/sourceware/cygwin/  
   
   matrix:
+    - OCAML_BRANCH: 4.02.3
+    - OCAML_BRANCH: 4.03.0
+    - OCAML_BRANCH: 4.04.0
     - OCAML_BRANCH: 4.05.0
     - OCAML_BRANCH: 4.06.0
 
