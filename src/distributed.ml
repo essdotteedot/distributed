@@ -1516,7 +1516,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
           I.catch 
           (fun () ->
             connect_to_remote_nodes ns remote_config.Remote_config.remote_nodes >>= fun () ->
-            let local_sock_addr =  Unix.ADDR_INET (Unix.inet6_addr_any , remote_config.Remote_config.local_port) in          
+            let local_sock_addr =  Unix.ADDR_INET (Unix.inet_addr_any , remote_config.Remote_config.local_port) in          
             I.establish_server ~backlog:remote_config.Remote_config.connection_backlog local_sock_addr (node_server_fn ns) >>= fun command_process_server ->
             ns.node_server := Some command_process_server ;
             at_exit (
