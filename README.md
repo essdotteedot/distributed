@@ -20,4 +20,4 @@ Example programs can be found in the [examples](examples) directory.
 License
 -------
 
-[MIT License](LICENSE)
+[MIT License](LICENSE.md)
