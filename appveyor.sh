@@ -13,5 +13,5 @@ echo distributed checkout dir is $APPVEYOR_BUILD_FOLDER
 /usr/`whoami`/bin/opam.exe pin add distributed-lwt $APPVEYOR_BUILD_FOLDER -n -y
 /usr/`whoami`/bin/opam.exe pin add lwt https://github.com/ocsigen/lwt.git\#safer-semantics -n -y
 /usr/`whoami`/bin/opam.exe install distributed-lwt -y
-/usr/`whoami`/bin/opam.exe remove distributed-lwt
-/usr/`whoami`/bin/opam.exe install distributed-lwt -v -t -y
+cd distributed
+make test
