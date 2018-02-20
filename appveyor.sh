@@ -16,4 +16,4 @@ echo distributed checkout dir is $APPVEYOR_BUILD_FOLDER
 cd distributed
 jbuilder build --dev
 jbuilder build ./tests/test_distributed.exe
-./tests/test_distributed.exe -l
+_build/default/tests/test_distributed.exe -l
