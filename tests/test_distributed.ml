@@ -1896,8 +1896,9 @@ let log_it_stdout str_fn = Lwt_io.write Lwt_io.stdout @@ str_fn
 let log_it_quiet _ = Lwt.return ()
 
 let _ =
+  let logger = if (Array.length Sys.argv) = 2 && Sys.argv.(1) = "-l" then log_it_stdout else log_it_quiet in
   Logs.Src.set_level log_src (Some Logs.Debug) ;
-  Logs.set_reporter @@ lwt_reporter log_it_quiet ;
+  Logs.set_reporter @@ lwt_reporter logger ;
   run_tests "Test Distributed" suite ;   
 
 (*BISECT-IGNORE-END*)

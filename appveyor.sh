@@ -14,4 +14,6 @@ echo distributed checkout dir is $APPVEYOR_BUILD_FOLDER
 /usr/`whoami`/bin/opam.exe pin add lwt https://github.com/ocsigen/lwt.git\#safer-semantics -n -y
 /usr/`whoami`/bin/opam.exe install distributed-lwt -y
 cd distributed
-make test
+jbuilder build --dev
+jbuilder build ./tests/test_distributed.exe
+./tests/test_distributed.exe -l
