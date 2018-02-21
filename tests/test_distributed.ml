@@ -565,7 +565,7 @@ let test_unmonitor_local_remote_config _ =
   let test_proc () = P.(                                        
       get_self_node >>= fun local_node ->
       assert_equal "Process should not have spawned yet" true (not !result) ;
-      spawn local_node (fun () -> return () >>= fun _ -> lift_io (Test_io.sleep 0.05) >>= fun () -> return (result := true)) >>= fun (new_pid, _) ->
+      spawn local_node (fun () -> result := true ; lift_io (Test_io.sleep 0.05)) >>= fun (new_pid, _) ->
       spawn local_node (another_monitor_proc new_pid) >>= fun _ ->
       monitor new_pid >>= fun mon_res ->
       unmonitor mon_res >>= fun () ->
