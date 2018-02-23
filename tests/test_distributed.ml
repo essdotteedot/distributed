@@ -1815,6 +1815,19 @@ let test_get_remote_node_remote_remote_config _ =
     ) 
   )    
 
+  (* Lwt_io.open_connection hangs on windows, checking in this test to make sure it's not just my machine 
+     should hang on appveyor as well. On linux it will raise a Unix.Unix_error(Unix.ECONNREFUSED, "connect", "")
+     error and complete.
+  *)
+  let bad_open_sanity_check _ =
+    let open Lwt in
+    let bad_open () =
+      Lwt_io.open_connection (Unix.ADDR_INET (Unix.inet_addr_of_string "127.0.0.1",46000)) >>= fun _ -> 
+      return () in
+    try
+      test_run_wrapper "bad_open_sanity_check" bad_open
+    with Unix.Unix_error (Unix.ECONNREFUSED, "connect", "") -> ()
+
 let suite = [
     "Test return and bind"                                                ,   test_return_bind ;
 
@@ -1869,7 +1882,9 @@ let suite = [
 
     "Test get_remote_node local only"                                     ,   test_get_remote_node_local_only ;
     "Test get_remote_node local with remote config"                       ,   test_get_remote_node_local_remote_config ;
-    "Test get_remote_node_remote remote config"                           ,   test_get_remote_node_remote_remote_config ;    
+    "Test get_remote_node_remote remote config"                           ,   test_get_remote_node_remote_remote_config ;
+    
+    "Test bad open sanity check"                                          ,   bad_open_sanity_check ;
   ]
 
 (* slightly modified version of reporter defined in Logs_lwt manual : http://erratique.ch/software/logs/doc/Logs_lwt.html#report_ex*)
