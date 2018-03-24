@@ -6,7 +6,7 @@ script:
   - bash -ex .travis-opam.sh
 env:
   global:
-   - PINS="distributed:. distributed-lwt:. lwt:https://github.com/ocsigen/lwt.git\#safer-semantics"   
+   - PINS="distributed:. distributed-lwt:. lwt"   
   matrix:
     - OCAML_VERSION=4.02 PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"
     - OCAML_VERSION=4.03 PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"

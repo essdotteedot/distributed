@@ -10,7 +10,7 @@ echo "Installing ocveralls"
 opam install ocveralls
 
 echo "Running test and making coverage report"
-make test
+make lwt_test
 
 echo "Uploading coverage report"
 ocveralls `find . -name 'bisect*.out'` --send

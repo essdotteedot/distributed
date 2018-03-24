@@ -1,12 +1,6 @@
 (jbuild_version 1)
 
-(executable
- ((name test_distributed)
-  (modes (native))
-  (libraries (distributed lwt lwt.unix logs.lwt))))
-
-(alias
- ((name    runtest)
-  (deps    (test_distributed.exe))
-  (package distributed-lwt)
-  (action  (run ${<}))))
+(library
+ ((name test_distributed)  
+  (wrapped false)  
+  (libraries (distributed)))) 

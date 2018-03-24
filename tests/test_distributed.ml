@@ -1,109 +1,34 @@
 (*BISECT-IGNORE-BEGIN*)
 
-exception Test_ex
+module type Test_IO_sig = sig
+  include Distributed.Nonblock_io 
+  val run_fn : 'a t -> 'a  
+  val get_established_connection_count : unit -> int
+  val reset_established_connection_count : unit -> unit
+  val get_atexit_fns : unit -> (unit -> unit t) list
+  val clear_atexit_fnns : unit -> unit
+end
 
-exception Test_failure of string
+module type Tests = sig
+  val run_suite : unit -> unit
+end
 
-let established_connections : int ref = ref 0
+module Make (Test_io : Test_IO_sig) : Tests = struct
 
-let exit_fns : (unit -> unit Lwt.t) list ref = ref []
+  exception Test_ex
 
-let log_src = Logs.Src.create "distributed" ~doc:"logs events related to the distributed library"
-
-module Log = (val Logs_lwt.src_log log_src : Logs_lwt.LOG)
+  exception Test_failure of string
 
 let get_option (v : 'a option) : 'a = 
   match v with
   | None -> assert false
   | Some v' -> v'    
 
-module Test_io = struct    
-
-  type 'a t = 'a Lwt.t
-
-  type 'a stream = 'a Lwt_stream.t
-
-  type input_channel = Lwt_io.input_channel
-
-  type output_channel = Lwt_io.output_channel
-
-  type server = Lwt_io.server
-
-  type level = Debug 
-             | Info
-             | Warning
-             | Error             
-
-  exception Timeout = Lwt_unix.Timeout
-
-  let lib_name = "Test_io"
-
-  let lib_version = "%%VERSION_NUM%%"
-
-  let lib_description = "A Lwt based test implementation that uses for testing purposes"              
-
-  let return = Lwt.return
-
-  let (>>=) = Lwt.(>>=)
-
-  let fail = Lwt.fail    
-
-  let catch = Lwt.catch
-
-  let async = Lwt.async
-
-  let create_stream = Lwt_stream.create
-
-  let get = Lwt_stream.get        
-
-  let stream_append = Lwt_stream.append            
-
-  let close_input = Lwt_io.close
-
-  let close_output = Lwt_io.close    
-
-  let read_value = Lwt_io.read_value
-
-  let write_value = Lwt_io.write_value
-
-  let of_logs_lwt_level = function
-    | Debug -> Logs.Debug 
-    | Info -> Logs.Info
-    | Warning -> Logs.Warning
-    | Error -> Logs.Error    
-  
-  let log (level:level) (msg_fmtter:unit -> string) =
-    Log.msg (of_logs_lwt_level level) (fun m -> m "%s" @@ msg_fmtter ()) >>= fun _ -> return ()     
-
-  let open_connection sock_addr = Lwt_io.open_connection sock_addr
-
-  let establish_server ?backlog sock_addr server_fn = 
-    Lwt_io.establish_server_with_client_address ?backlog sock_addr server_fn >>= fun server ->
-    established_connections := !established_connections + 1 ;
-    Lwt.return server
-
-  let shutdown_server = Lwt_io.shutdown_server
-
-  let sleep = Lwt_unix.sleep
-
-  let timeout = Lwt_unix.timeout
-
-  let pick = Lwt.pick
-
-  let at_exit f = exit_fns := f::!exit_fns
-
-end
-
 module M  = struct
   type t = string
 
   let string_of_message m = m  
 end
-
-let get_option (v : 'a option) : 'a = 
-  match v with
-  | None -> assert false 
-  | Some v' -> v'
 
 let assert_equal msg expect actual =
   if expect = actual then () else raise (Test_failure msg)
@@ -127,18 +52,12 @@ let run_tests suite_name tests =
   Printf.printf "%s" @@ Buffer.contents buff_test_output ; 
   if !total_tests_failed > 0 then exit 1 else exit 0
 
-let test_run_wrapper test_name lwt_exp =
-  Lwt.(Lwt_main.run (
-    (* override the default asycn exception hook, because the default kills the process 
-       in the distributed lib, the async exception is only propageted after performing
-       clean up actions and in normal operation the process is excepted to be stopped
-       but for testing the process must go on
-    *)
-    async_exception_hook := (fun e -> ()) ; 
-    established_connections := 0 ; 
-    exit_fns := [] ; 
-    Test_io.log Test_io.Debug (fun () -> Format.sprintf "------ Starting test %s ------" test_name) >>= fun () ->
-    lwt_exp ()))         
+let test_run_wrapper test_name io_exp =
+    Test_io.(run_fn (
+      reset_established_connection_count () ; 
+      clear_atexit_fnns () ; 
+      log Debug (fun () -> Format.sprintf "------ Starting test %s ------" test_name) >>= fun () ->
+      io_exp ()))         
 
 (* there is a lot of code duplication because ocaml currently does not support higher kinded polymorphism *)  
 
@@ -155,7 +74,7 @@ let test_return_bind _ =
     ) in             
   test_run_wrapper "test_return_bind" (fun () -> P.run_node node_config ~process:test_proc) ;
   assert_equal "return, bind failed" (Some 5) !result ;     
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)
+    assert_equal "local config should hav establised 0 connections" 0 (Test_io.get_established_connection_count ())
 
 (* spawn, spawn monitor tests for local and remote configurations *)
 
@@ -174,7 +93,7 @@ let test_spawn_local_local_config _ =
   test_run_wrapper "test_spawn_local_local_config" (fun () -> P.run_node node_config ~process:test_proc) ;
   assert_equal "monitor result should have been None" true (!mres = None) ;
   assert_equal "process was not spawned" true !result ;     
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)
+    assert_equal "local config should hav establised 0 connections" 0 (Test_io.get_established_connection_count ())
 
 let test_spawn_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
@@ -193,13 +112,13 @@ let test_spawn_local_remote_config _ =
       mres := mon_res ;      
       return ()        
     ) in             
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_spawn_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () ->       
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "process was not spawned" true !result ;
       assert_equal "monitor result should have been none" true (!mres = None) ;    
-      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;  
+        assert_equal "remote config with only a single node should have establised 1 connection" 1 (Test_io.get_established_connection_count ()) ;  
       
       return ()
     )
@@ -234,12 +153,12 @@ let test_spawn_remote_remote_config _ =
       mres := mon_res ;
       return ()                   
     ) in
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_spawn_remote_remote_config" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;                
+        Test_io.async (fun () -> Consumer.run_node remote_config) ;                
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
+        assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (Test_io.get_established_connection_count ()) ;
       assert_equal "process did not spawn" (Some "spawned") !spawn_res ;
       
       return () 
@@ -266,12 +185,12 @@ let test_spawn_monitor_local_local_config _ =
       mres := mon_res ;  
       return ()        
     ) in             
-  Lwt.(test_run_wrapper "test_spawn_monitor_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
+    Test_io.(test_run_wrapper "test_spawn_monitor_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()))) ;
   assert_equal "process was not spawned" true (!result && !result_monitor <> None) ;
   assert_equal "termination monitor result not received" (Some "got normal termination") !result_monitor ;     
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections) ;
+    assert_equal "local config should hav establised 0 connections" 0 (Test_io.get_established_connection_count ()) ;
   assert_equal "spawn monitor failed" true (None <> !mres) ;
-  assert_equal "should have established 0 connections" 0 (!established_connections)    
+    assert_equal "should have established 0 connections" 0 (Test_io.get_established_connection_count ())    
 
 let test_spawn_monitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
@@ -298,13 +217,13 @@ let test_spawn_monitor_local_remote_config _ =
       mres := mon_res ;  
       return ()             
     ) in             
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_spawn_monitor_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "process was not spawned" true (!result && !result_monitor <> None) ;
       assert_equal "termination monitor result not received" (Some "got normal termination") !result_monitor ;     
-      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+        assert_equal "remote config with only a single node should have establised 1 connection" 1 (Test_io.get_established_connection_count ()) ;
       assert_equal "spawn monitor failed" true (None <> !mres) ;
       
       return ()    
@@ -342,13 +261,13 @@ let test_spawn_monitor_remote_remote_config _ =
       mres := mon_res ;  
       return ()                       
     ) in
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_spawn_monitor_remote_remote_config" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
+        Test_io.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->      
       assert_equal "termination monitor result not received" (Some "got normal termination") !result_monitor ;     
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+        assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (Test_io.get_established_connection_count ()) ;
       assert_equal "spawn monitor failed" true (None <> !mres) ;
       
       return () 
@@ -388,11 +307,11 @@ let test_monitor_local_local_config _ =
       >>= fun _ ->
       return ()        
     ) in             
-  Lwt.(test_run_wrapper "test_monitor_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
+    Test_io.(test_run_wrapper "test_monitor_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ())));
   assert_equal "process was not spawned" true (!result && !result_monitor <> None) ; 
   assert_equal "monitor failed" (Some "got normal termination") !result_monitor ;    
   assert_equal "monitor 2 failed" (Some "got normal termination") !result_monitor2 ;    
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)    
+    assert_equal "local config should hav establised 0 connections" 0 (Test_io.get_established_connection_count ())    
 
 let test_monitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
@@ -430,14 +349,14 @@ let test_monitor_local_remote_config _ =
       >>= fun _ ->
       return ()       
     ) in             
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_monitor_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "process was not spawned" true (!result && !result_monitor <> None) ;
       assert_equal "monitor failed" (Some "got normal termination") !result_monitor ;      
       assert_equal "monitor 2 failed" (Some "got normal termination") !result_monitor2 ;      
-      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+        assert_equal "remote config with only a single node should have establised 1 connection" 1 (Test_io.get_established_connection_count ()) ;
       
       return ()    
     )
@@ -485,14 +404,14 @@ let test_monitor_remote_remote_config _ =
       >>= fun _ ->
       return ()                 
     ) in
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_monitor_remote_remote_config" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
+        Test_io.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->      
       assert_equal "monitor failed" (Some "got normal termination") !result_monitor ;      
       assert_equal "monitor 2 failed" (Some "got normal termination") !result_monitor2 ;      
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+        assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (Test_io.get_established_connection_count ()) ;
       
       return () 
     ) 
@@ -534,11 +453,11 @@ let test_unmonitor_local_local_config _ =
       unmon_res := received ;
       return ()        
     ) in             
-  Lwt.(test_run_wrapper "test_unmonitor_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
+    Test_io.(test_run_wrapper "test_unmonitor_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ())));
   assert_equal "process was not spawned" true !result ;
   assert_equal "unmonitor failed" None !unmon_res ;     
   assert_equal "unmonitor 2 failed" None !unmon_res2 ;     
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)    
+    assert_equal "local config should hav establised 0 connections" 0 (Test_io.get_established_connection_count ())    
 
 let test_unmonitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
@@ -579,14 +498,14 @@ let test_unmonitor_local_remote_config _ =
       unmon_res := received ;
       return ()        
     ) in             
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_unmonitor_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "process was not spawned" true !result ;  
       assert_equal "unmonitor failed" None !unmon_res ;    
       assert_equal "unmonitor 2 failed" None !unmon_res2 ;    
-      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+        assert_equal "remote config with only a single node should have establised 1 connection" 1 (Test_io.get_established_connection_count ()) ;
       
       return ()    
     )
@@ -637,14 +556,14 @@ let test_unmonitor_remote_remote_config _ =
       unmon_res := received ;     
       return ()                 
     ) in
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_unmonitor_remote_remote_config" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
+        Test_io.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->      
       assert_equal "unmonitor failed" None !unmon_res ;    
       assert_equal "unmonitor 2 failed" None !unmon_res2 ;    
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+        assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (Test_io.get_established_connection_count ()) ;
       
       return () 
     ) 
@@ -674,10 +593,10 @@ let test_unmonitor_from_spawn_monitor_local_local_config _ =
       unmon_res := received ;
       return ()             
     ) in             
-  Lwt.(test_run_wrapper "test_unmonitor_from_spawn_monitor_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
+    Test_io.(test_run_wrapper "test_unmonitor_from_spawn_monitor_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ())));
   assert_equal "Process was not spawned and monitored" true (!result && !mres <> None) ;
   assert_equal "unmonitor failed" None !unmon_res ;       
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)    
+    assert_equal "local config should hav establised 0 connections" 0 (Test_io.get_established_connection_count ())    
 
 let test_unmonitor_from_spawn_monitor_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
@@ -706,13 +625,13 @@ let test_unmonitor_from_spawn_monitor_local_remote_config _ =
       unmon_res := received ;
       return ()                 
     ) in             
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_unmonitor_from_spawn_monitor_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "Process was not spawned and monitored" true (!result && !mres <> None) ;
       assert_equal "unmonitor failed" None !unmon_res ;       
-      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+        assert_equal "remote config with only a single node should have establised 1 connection" 1 (Test_io.get_established_connection_count ()) ;
       
       return ()    
     )
@@ -750,13 +669,13 @@ let test_unmonitor_from_spawn_monitor_remote_remote_config _ =
       unmon_res := received ;
       return ()                  
     ) in
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_unmonitor_from_spawn_monitor_remote_remote_config" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
+        Test_io.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->      
       assert_equal "unmonitor failed" None !unmon_res ;       
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+        assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (Test_io.get_established_connection_count ()) ;
       
       return () 
     ) 
@@ -774,7 +693,7 @@ let test_get_remote_nodes_local_only _ =
     ) in             
   test_run_wrapper "test_get_remote_nodes_local_only" (fun () -> P.run_node node_config ~process:test_proc) ;     
   assert_equal "get remote nodes in local config should return 0" 0 !num_remote_nodes ;
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)
+    assert_equal "local config should hav establised 0 connections" 0 (Test_io.get_established_connection_count ())
 
 let test_get_remote_nodes_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
@@ -789,12 +708,12 @@ let test_get_remote_nodes_remote_local _ =
       get_remote_nodes >>= fun nodes ->
       return (num_remote_nodes := (List.length nodes))         
     ) in             
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_get_remote_nodes_local_only" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "get remote nodes in remote config with no remote nodes should return 0" 0 !num_remote_nodes ;
-      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+        assert_equal "remote config with only a single node should have establised 1 connection" 1 (Test_io.get_established_connection_count ()) ;
       
       return ()
     )
@@ -820,13 +739,13 @@ let test_get_remote_nodes_remote_conifg _ =
       get_remote_nodes >>= fun nodes ->
       return (num_remote_nodes := (List.length nodes))                          
     ) in
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_get_remote_nodes_remote_conifg" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
+        Test_io.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "get remote nodes in remote config with 1 remote nodes should return 1" 1 !num_remote_nodes ;
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+        assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (Test_io.get_established_connection_count ()) ;
       
       return () 
     ) 
@@ -863,10 +782,10 @@ let test_broadcast_local_only _ =
       loop_back_received := recv_res ;            
       return ()
     ) in           
-  Lwt.(test_run_wrapper "test_broadcast_local_only" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
+    Test_io.(test_run_wrapper "test_broadcast_local_only" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()))) ;
   assert_equal "broacast failed" 2 !broadcast_received ;
   assert_equal "broadcast message sent to originator" None !loop_back_received ;    
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)
+    assert_equal "local config should hav establised 0 connections" 0 (Test_io.get_established_connection_count ())
 
 let test_broadcast_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
@@ -902,11 +821,11 @@ let test_broadcast_remote_local _ =
       loop_back_received := recv_res ;      
       return ()
     ) in           
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_broadcast_remote_local" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
-      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
+        assert_equal "remote config with only a single node should have establised 1 connection" 1 (Test_io.get_established_connection_count ()) ;
       assert_equal "broacast fail" 2 !broadcast_received ; 
       assert_equal "broadcast message sent to originator" None !loop_back_received ;     
       
@@ -976,14 +895,14 @@ let test_broadcast_remote_remote _ =
       in 
       receive_loop ()      
     ) in      
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_broadcast_remote_remote" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
+        Test_io.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "broacast fail" 4 !broadcast_received ;
       assert_equal "broadcast message sent to originator" None !loop_back_received ;
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+        assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (Test_io.get_established_connection_count ()) ;
       
       return () 
     ) 
@@ -1029,11 +948,11 @@ let test_send_local_only _ =
       >>= fun _ ->           
       return ()
     ) in           
-  Lwt.(test_run_wrapper "test_send_local_only" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
+    Test_io.(test_run_wrapper "test_send_local_only" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()))) ;
   assert_equal "spawn and monitor failed" true (!mres <> None) ;
   assert_equal "send failed" (Some "sent message") !received_message ;
   assert_equal "sending to invalid process should have succeeded" true (not !send_failed) ;    
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)  
+    assert_equal "local config should hav establised 0 connections" 0 (Test_io.get_established_connection_count ())  
 
 let test_send_remote_local _ =
   let module P = Distributed.Make (Test_io) (M) in  
@@ -1078,14 +997,14 @@ let test_send_remote_local _ =
       >>= fun _ ->           
       return ()
     ) in           
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_send_remote_local" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "spawn and monitor failed" true (!mres <> None) ;
       assert_equal "send failed" (Some "sent message") !received_message ;
       assert_equal "sending to invalid process should have succeeded" true (not !send_failed) ;   
-      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+        assert_equal "remote config with only a single node should have establised 1 connection" 1 (Test_io.get_established_connection_count ()) ;
       
       return ()    
     )
@@ -1158,14 +1077,14 @@ let test_send_remote_remote _ =
       in 
       receive_loop ()      
     ) in      
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_send_remote_remote" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
+        Test_io.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "send fail" 4 !sent_received ;
       assert_equal "sending to invalid process should have succeeded" true (not !send_failed) ;      
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+        assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (Test_io.get_established_connection_count ()) ;
       
       return () 
     ) 
@@ -1195,9 +1114,9 @@ let test_raise_local_config _ =
       >>= fun _ ->            
       return ()        
     ) in             
-  Lwt.(test_run_wrapper "test_raise_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
+    Test_io.(test_run_wrapper "test_raise_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()))) ;
   assert_equal "expceted exception did not occur" true !expected_exception_happened ;
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)    
+    assert_equal "local config should hav establised 0 connections" 0 (Test_io.get_established_connection_count ())    
 
 let test_raise_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
@@ -1226,12 +1145,12 @@ let test_raise_local_remote_config _ =
       >>= fun _ ->            
       return ()        
     ) in        
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_raise_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "expceted exception did not occur" true !expected_exception_happened ;  
-      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;  
+        assert_equal "remote config with only a single node should have establised 1 connection" 1 (Test_io.get_established_connection_count ()) ;  
       
       return ()    
     )
@@ -1281,13 +1200,13 @@ let test_raise_remote_remote_config _ =
       >>= fun _ ->
       return ()                       
     ) in
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_raise_remote_remote_config" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;                
+        Test_io.async (fun () -> Consumer.run_node remote_config) ;                
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->      
       assert_equal "expceted exception did not occur" true !expected_exception_happened ;  
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;      
+        assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (Test_io.get_established_connection_count ()) ;      
       
       return () 
     ) 
@@ -1321,10 +1240,10 @@ let test_monitor_dead_process_local_local_config _ =
       >>= fun _ ->
       return ()        
     ) in             
-  Lwt.(test_run_wrapper "test_monitor_dead_process_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
+    Test_io.(test_run_wrapper "test_monitor_dead_process_local_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ())));
   assert_equal "process was not spawned" true (!result && !result_monitor <> None) ; 
   assert_equal "did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;    
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)    
+    assert_equal "local config should hav establised 0 connections" 0 (Test_io.get_established_connection_count ())    
 
 let test_monitor_dead_process_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in  
@@ -1357,13 +1276,13 @@ let test_monitor_dead_process_local_remote_config _ =
       >>= fun _ ->
       return ()        
     ) in             
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_monitor_dead_process_local_remote_config" (fun () -> 
       P.run_node node_config ~process:test_proc >>= fun () -> 
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "process was not spawned" true (!result && !result_monitor <> None) ;
       assert_equal "did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;      
-      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+        assert_equal "remote config with only a single node should have establised 1 connection" 1 (Test_io.get_established_connection_count ()) ;
       
       return ()    
     )
@@ -1405,13 +1324,13 @@ let test_monitor_dead_process_remote_remote_config _ =
       >>= fun _ ->
       return ()                 
     ) in
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_monitor_dead_process_remote_remote_config" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
+        Test_io.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->      
       assert_equal "did not get expected NoProcess monitor message" (Some "got noprocess") !result_monitor ;      
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+        assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (Test_io.get_established_connection_count ()) ;
       
       return () 
     ) 
@@ -1448,10 +1367,10 @@ let test_add_remove_remote_nodes_in_local_config _ =
       >>= fun _ ->
       return ()        
     ) in             
-  Lwt.(test_run_wrapper "test_add_remove_remote_nodes_in_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())));
+    Test_io.(test_run_wrapper "test_add_remove_remote_nodes_in_local_config" (fun () -> P.run_node node_config ~process:test_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ())));
   assert_equal "add_remote_node should have throw Local_only_mode exception when running with a local only config" true !add_pass ; 
   assert_equal "remove_remote_node should have throw Local_only_mode exception when running with a local only config" true !remove_pass ;    
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)    
+    assert_equal "local config should hav establised 0 connections" 0 (Test_io.get_established_connection_count ())    
 
 (* test adding/removing nodes in remote configurations. *)
 
@@ -1516,11 +1435,11 @@ let test_add_remove_nodes_remote_config _ =
           | _ -> assert false      
         )
     ) in
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_add_remove_nodes_remote_config" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;            
+        Test_io.async (fun () -> Consumer.run_node remote_config) ;            
       Producer.run_node node_config ~process:producer_proc >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->      
       assert_equal "remote nodes should have been empty before adding" 0 (List.length !remote_nodes_at_start) ;
       assert_equal "remote nodes should have 1 remote node after adding" 1 (List.length !remote_nodes_after_add) ;      
       assert_equal "remote nodes should have 1 remote node after adding a dup" 1 (List.length !remote_nodes_after_dup_add) ;      
@@ -1529,7 +1448,7 @@ let test_add_remove_nodes_remote_config _ =
       assert_equal "expected InvalidNode exception did not occur when spawning on removed node" true !expected_spawn_exception ;
       assert_equal "expected InvalidNode exception did not occur when broadcasting on removed node" true !expected_broadcast_exception ;
       assert_equal "expected InvalidNode exception did not occur when sending message on removed node" true !expected_send_exception ;            
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+        assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (Test_io.get_established_connection_count ()) ;
       
       return () 
     ) 
@@ -1569,10 +1488,10 @@ let test_selective_receive_local_config _ =
       lift_io (Test_io.sleep 0.2) >>= fun () ->
       return () 
     ) in
-  Lwt.(test_run_wrapper "test_selective_receive_local_config" (fun () -> P.run_node node_config ~process:main_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
+    Test_io.(test_run_wrapper "test_selective_receive_local_config" (fun () -> P.run_node node_config ~process:main_proc >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()))) ;
   assert_equal "selective receive failed, candidate message" (Some "the one") !selective_message ;
   assert_equal "selective receive failed, other messages" ["0" ; "1" ; "2" ; "3" ; "4" ; "5"] !other_messages_inorder ;
-  assert_equal "local config should hav establised 0 connections" 0 (!established_connections)     
+    assert_equal "local config should hav establised 0 connections" 0 (Test_io.get_established_connection_count ())     
 
 let test_selective_receive_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
@@ -1611,13 +1530,13 @@ let test_selective_receive_local_remote_config _ =
       lift_io (Test_io.sleep 0.2) >>= fun () ->
       return () 
     ) in
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_selective_receive_local_remote_config" (fun () -> 
       P.run_node node_config ~process:main_proc >>= fun () -> 
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "selective receive failed, candidate message" (Some "the one") !selective_message ;
       assert_equal "selective receive failed, other messages" ["0" ; "1" ; "2" ; "3" ; "4" ; "5"] !other_messages_inorder ;
-      assert_equal "remote config with only a single node should have establised 1 connection" 1 (!established_connections) ;
+        assert_equal "remote config with only a single node should have establised 1 connection" 1 (Test_io.get_established_connection_count ()) ;
       
       return ()                      
     )
@@ -1681,13 +1600,13 @@ let test_selective_receive_remote_remote_config _ =
       spawn self_node (sender_proc rpid) >>= fun _ ->
       lift_io (Test_io.sleep 0.1)
     ) in
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_selective_receive_remote_remote_config" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;  
+        Test_io.async (fun () -> Consumer.run_node remote_config) ;  
       Producer.run_node node_config ~process:main_proc >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->  
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->  
       assert_equal "selective receive failed, other messages"  ["the one" ; "5" ; "4" ; "3" ; "2" ; "1" ; "0"] !messages_inorder ;
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+        assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (Test_io.get_established_connection_count ()) ;
       
       return ()
     ) 
@@ -1700,16 +1619,16 @@ let test_multiple_run_node _ =
   let node_config = P.Local {P.Local_config.node_name = "test" ;} in
   let exception_thrown = ref None in
 
-  Lwt.(test_run_wrapper "test_multiple_run_node" (fun () -> 
+    Test_io.(test_run_wrapper "test_multiple_run_node" (fun () -> 
       P.run_node node_config >>= fun () ->
       catch
         (fun () -> P.run_node node_config)
         (function
           | P.Init_more_than_once -> exception_thrown := Some true ; return ()
-          | _ -> return ()) >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ())
+            | _ -> return ()) >>= fun () -> List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ())
     )) ;
     assert_equal "Init more than once failed, did not get exception" (Some true) !exception_thrown ;
-    assert_equal "should hav established 0 connections" 0 (!established_connections) 
+      assert_equal "should hav established 0 connections" 0 (Test_io.get_established_connection_count ()) 
 
 (* test get_remote_node*)
 
@@ -1728,10 +1647,10 @@ let test_get_remote_node_local_only _ =
           | Some _ -> nonexistent_remote_node_result := Some "fail" ; return ())
     ) in 
 
-  Lwt.(test_run_wrapper "test_get_remote_node_local_only" (fun () -> (P.run_node node_config ~process:p)  >>= fun _ -> List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()))) ;
+    Test_io.(test_run_wrapper "test_get_remote_node_local_only" (fun () -> (P.run_node node_config ~process:p)  >>= fun _ -> List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()))) ;
   assert_equal "get_remote_node failed locally, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
   assert_equal "get_remote_node failed locally, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
-  assert_equal "should have established 0 connections" 0 (!established_connections)
+    assert_equal "should have established 0 connections" 0 (Test_io.get_established_connection_count ())
 
 let test_get_remote_node_local_remote_config _ =
   let module P = Distributed.Make (Test_io) (M) in
@@ -1752,10 +1671,10 @@ let test_get_remote_node_local_remote_config _ =
           | None -> nonexistent_remote_node_result := Some "ran" ; return ()
           | Some _ -> nonexistent_remote_node_result := Some "fail" ; return ())
     ) in 
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_get_remote_node_local_remote_config" (fun () -> 
       (P.run_node node_config ~process:p)  >>= fun () -> 
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->
       assert_equal "get_remote_node failed locally with remote config, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
       assert_equal "get_remote_node failed locally with remote config, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
       
@@ -1801,15 +1720,15 @@ let test_get_remote_node_remote_remote_config _ =
              receive @@ termination_case (function _ -> return ())) >>= fun _ -> return ())
     ) in 
 
-  Lwt.(
+    Test_io.(
     test_run_wrapper "test_get_remote_node_remote_remote_config" (fun () -> 
-      Lwt.async (fun () -> Consumer.run_node remote_config) ;  
+        Test_io.async (fun () -> Consumer.run_node remote_config) ;  
       Producer.run_node node_config ~process:p >>= fun () ->
-      List.fold_right (fun v acc -> v () >>= fun () -> acc) !exit_fns (return ()) >>= fun () ->      
+        List.fold_right (fun v acc -> v () >>= fun () -> acc) (get_atexit_fns ()) (return ()) >>= fun () ->      
       assert_equal "get_remote_node failed remotely, self node was in remote nodes" (Some "ran") !self_remote_node_result ;
       assert_equal "get_remote_node failed remotely, nonexistent node was in remote nodes" (Some "ran") !nonexistent_remote_node_result ;
       assert_equal "get_remote_node failed remotely, existent node was not in remote nodes" (Some "ran") !exitent_remote_node_result ;
-      assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (!established_connections) ;
+        assert_equal "remote config with 2 remote nodes should have establised 2 connections" 2 (Test_io.get_established_connection_count ()) ;
       
       return () 
     ) 
@@ -1872,33 +1791,9 @@ let test_get_remote_node_remote_remote_config _ =
     "Test get_remote_node_remote remote config"                           ,   test_get_remote_node_remote_remote_config ;        
   ]
 
-(* slightly modified version of reporter defined in Logs_lwt manual : http://erratique.ch/software/logs/doc/Logs_lwt.html#report_ex*)
-let lwt_reporter log_it =
-  let buf_fmt () =
-    let b = Buffer.create 512 in
-    Format.formatter_of_buffer b, fun () -> let m = Buffer.contents b in Buffer.reset b; m
-  in
-  let app, app_flush = buf_fmt () in
-  let reporter = Logs.format_reporter ~app ~dst:app () in
-  let report src level ~over k msgf =
-    let k' () =
-      let write () = log_it @@ app_flush () in
-      let unblock () = over (); Lwt.return_unit in
-      Lwt.finalize write unblock |> Lwt.ignore_result;
-      k ()
-    in
-    reporter.Logs.report src level ~over:(fun () -> ()) k' msgf;
-  in
-  { Logs.report = report }  
+  let run_suite () =
+    run_tests "Test Distributed" suite ;   
 
-let log_it_stdout str_fn = Lwt_io.write Lwt_io.stdout @@ str_fn
-
-let log_it_quiet _ = Lwt.return ()
-
-let _ =
-  let logger = if (Array.length Sys.argv) = 2 && Sys.argv.(1) = "-l" then log_it_stdout else log_it_quiet in
-  Logs.Src.set_level log_src (Some Logs.Debug) ;
-  Logs.set_reporter @@ lwt_reporter logger ;
-  run_tests "Test Distributed" suite ;   
+end
 
 (*BISECT-IGNORE-END*)
