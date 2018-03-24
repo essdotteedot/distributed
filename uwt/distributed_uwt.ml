@@ -24,7 +24,7 @@ module IO_UWT(L : CustomerLogger) = struct
 
   let lib_name = "Distributed_uwt"
 
-  let lib_version = "%%VERSION_NUM%%"
+  let lib_version = "0.1.0"
 
   let lib_description = "A Uwt based implementation."           
 

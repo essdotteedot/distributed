@@ -3,7 +3,7 @@
     {!modtype:Process} provides a monadic interface to describe distributed computations.
 
     @author essdotteedot <essdotteedot_at_gmail_dot_com>
-    @version %%VERSION_NUM%%
+    @version 0.5.0
 *)
 
 (** Some nomenclature :

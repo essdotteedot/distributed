@@ -363,7 +363,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
   let initalised = ref false    
 
-  let dist_lib_version = "%%VERSION_NUM%%"       
+  let dist_lib_version = "0.5.0"       
 
   let print_string_of_termination_reason (reason : monitor_reason) (formatter : Format.formatter) : unit =
     match reason with
