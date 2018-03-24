@@ -23,7 +23,7 @@ build_script:
   - cmd: echo installing libuv
   - cmd: vcbuild.bat
   - set CYGWIN="nodosfilewarning winsymlinks:native"
-  - C:\cygwin64\setup-x86_64.exe --root=C:\cygwin64 --quiet-mode --no-desktop --no-startmenu --packages=perl,curl,diffutils,rsync,git,unzip,gzip,tar,make,mingw64-i686-gcc-core,mingw64-x86_64-gcc-core,m4,patch
+  - C:\cygwin64\setup-x86_64.exe --root=C:\cygwin64 --quiet-mode --no-desktop --no-startmenu --packages=perl,diffutils,rsync,git,unzip,gzip,tar,make,mingw64-i686-gcc-core,mingw64-x86_64-gcc-core,m4,patch
   - appveyor DownloadFile "https://github.com/fdopen/opam-repository-mingw/releases/download/0.0.0.1/opam64.tar.xz" -FileName "C:\projects\opam64.tar.xz" 
   - C:\cygwin64\bin\bash.exe -lc "$APPVEYOR_BUILD_FOLDER/appveyor.sh"  
   
