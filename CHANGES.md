@@ -15,6 +15,7 @@
 - Update case/receive API so that calling receive/receive_loop with a list of empty matchers is a compile time error.
   New APIs are `val case : (message_type -> (unit -> 'a t) option) -> 'a matcher_list`, `termination_case : (monitor_reason -> 'a t) -> 'a matcher_list`, `val (|.) : 'a matcher_list -> 'a matcher_list -> 'a matcher_list`, `val receive : ?timeout_duration:float -> 'a matcher_list -> 'a option t`, `val receive_loop : ?timeout_duration:float -> bool matcher_list -> unit t`.
 - Added appveyor CI support.
+- Added uwt support
 
 ### 0.4.0 (2017-01-18)
 
