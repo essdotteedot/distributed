@@ -1406,7 +1406,7 @@ let test_add_remove_nodes_remote_config _ =
       add_remote_node "127.0.0.1" 46000 "consumer" >>= fun _ ->
       get_remote_nodes >>= fun nodes_after_add_dup ->
       remote_nodes_after_dup_add := nodes_after_add_dup ;
-      spawn consumer_node (fun () -> lift_io @@ Test_io.sleep 0.1) >>= fun (rpid,_) ->
+      spawn consumer_node (fun () -> return () >>= fun _ -> lift_io @@ Test_io.sleep 0.1) >>= fun (rpid,_) ->
       remove_remote_node consumer_node >>= fun () ->
       get_remote_nodes >>= fun nodes_after_remove ->
       remote_nodes_after_remove := nodes_after_remove ;
@@ -1788,7 +1788,7 @@ let test_get_remote_node_remote_remote_config _ =
 
     "Test get_remote_node local only"                                     ,   test_get_remote_node_local_only ;
     "Test get_remote_node local with remote config"                       ,   test_get_remote_node_local_remote_config ;
-    "Test get_remote_node_remote remote config"                           ,   test_get_remote_node_remote_remote_config ;        
+    "Test get_remote_node_remote remote config"                           ,   test_get_remote_node_remote_remote_config ;       
   ]
 
   let run_suite () =
