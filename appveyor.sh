@@ -11,8 +11,7 @@ eval $(/usr/`whoami`/bin/ocaml-env.exe cygwin)
 echo Installing distributed
 echo distributed checkout dir is $APPVEYOR_BUILD_FOLDER
 /usr/`whoami`/bin/opam.exe pin add distributed $APPVEYOR_BUILD_FOLDER -n -y
-/usr/`whoami`/bin/opam.exe pin add distributed-uwt $APPVEYOR_BUILD_FOLDER -n -y
-/usr/`whoami`/bin/opam.exe install uwt -y 
+/usr/`whoami`/bin/opam.exe pin add distributed-uwt $APPVEYOR_BUILD_FOLDER -n -y 
 /usr/`whoami`/bin/opam.exe install distributed-uwt -y
 cd distributed
 jbuilder build --dev
