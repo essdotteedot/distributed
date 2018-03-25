@@ -14,7 +14,8 @@ build: [
 ]
 
 depends: [
-  "jbuilder"  {build & >= "1.0+beta16"}  
+  "jbuilder"  {build & >= "1.0+beta16"}
+  "base-unix"  
   # remove following line before release
   # "bisect_ppx"
 ]
