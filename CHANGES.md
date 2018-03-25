@@ -1,4 +1,4 @@
-## 0.5.0 (TBD)
+## 0.5.0 (2018-03-25)
 
 - Remove dependency on lwt_log use logs_lwt instead to ensure compatibility with  >= lwt 3.1.0 see #2. 
 - Remove usage of Lwt.ignore_result see #3.
@@ -15,7 +15,7 @@
 - Update case/receive API so that calling receive/receive_loop with a list of empty matchers is a compile time error.
   New APIs are `val case : (message_type -> (unit -> 'a t) option) -> 'a matcher_list`, `termination_case : (monitor_reason -> 'a t) -> 'a matcher_list`, `val (|.) : 'a matcher_list -> 'a matcher_list -> 'a matcher_list`, `val receive : ?timeout_duration:float -> 'a matcher_list -> 'a option t`, `val receive_loop : ?timeout_duration:float -> bool matcher_list -> unit t`.
 - Added appveyor CI support.
-- Added uwt support
+- Added uwt support.
 
 ### 0.4.0 (2017-01-18)
 
