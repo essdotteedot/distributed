@@ -7,9 +7,13 @@ receiving, broadcasting messages to those processes. Unlike Erlang, the messages
 Installation
 ------------
 
-The library is available via [OPAM](https://opam.ocaml.org):
+The core library, lwt implementation, and uwt implementation are available via [OPAM](https://opam.ocaml.org):
 
     $ opam install distributed
+    
+    $ opam install distributed-lwt
+    
+    $ opam install distributed-uwt    
 
 Documentation
 -------------
