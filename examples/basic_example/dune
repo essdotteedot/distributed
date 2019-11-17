@@ -1,0 +1,4 @@
+(executable
+  (name basic)
+  (modes (native exe))
+  (libraries distributed-lwt logs.lwt))

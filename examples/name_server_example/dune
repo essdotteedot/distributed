@@ -1,0 +1,4 @@
+(executables
+  (names add_client add_server name_server)
+  (modes (native exe) (native exe) (native exe))
+  (libraries distributed-lwt logs.lwt))

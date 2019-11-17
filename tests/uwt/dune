@@ -1,0 +1,12 @@
+(executable
+ (name test_uwt)
+ (libraries test_distributed uwt logs.lwt)
+ (modes (native exe)))
+
+(alias
+ (name    runtest-uwt)
+ (deps    test_uwt.exe)
+ (package distributed-uwt)
+ (action (run %{exe:test_uwt.exe})))
+
+

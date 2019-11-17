@@ -4,7 +4,7 @@
      a reporter (see the examples).     
 
     @author essdotteedot <essdotteedot_at_gmail_dot_com>
-    @version 0.1.0
+    @version 0.2.0
  *)
 
 (** This module provides a Log_lwt based logger to use. *)

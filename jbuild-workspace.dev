@@ -1,7 +1,0 @@
-; note that because the tests use sockets, and jbuilder runs jobs in parallel this will
-; fail (Unix.EADDRINUSE) unless jbuilder is invoked with -j 1
-(context ((switch 4.02.3)))
-(context ((switch 4.03.0)))
-(context ((switch 4.04.2)))
-(context ((switch 4.05.0)))
-(context ((switch 4.06.0)))

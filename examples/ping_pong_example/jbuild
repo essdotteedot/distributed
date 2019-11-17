@@ -1,6 +1,0 @@
-(jbuild_version 1)
-
-(executables
- ((names (ping pong))
-  (modes (native))
-  (libraries (distributed-lwt logs.lwt))))

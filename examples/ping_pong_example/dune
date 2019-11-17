@@ -1,0 +1,5 @@
+(executables
+  (names ping pong)
+  (modes (native exe) (native exe))
+  (libraries distributed-lwt logs.lwt))
+

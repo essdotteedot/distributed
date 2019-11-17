@@ -13,6 +13,6 @@ echo distributed checkout dir is $APPVEYOR_BUILD_FOLDER
 /usr/`whoami`/bin/opam.exe pin add distributed $APPVEYOR_BUILD_FOLDER -n -y
 /usr/`whoami`/bin/opam.exe pin add distributed-uwt $APPVEYOR_BUILD_FOLDER -n -y 
 /usr/`whoami`/bin/opam.exe install distributed-uwt -y -t
-#cd distributed
-#jbuilder build --dev
-#jbuilder build @runtest-uwt
+cd distributed
+dune build --workspace dune-workspace.dev
+dune build @runtest-uwt

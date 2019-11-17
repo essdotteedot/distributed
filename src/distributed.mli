@@ -1,9 +1,9 @@
 (** This module provides modules to create distribtued computations. 
-    Distributed comutations are described using the {!modtype:Process}. 
-    {!modtype:Process} provides a monadic interface to describe distributed computations.
+    Distributed comutations are described using the {!module-type:Process}. 
+    {!module-type:Process} provides a monadic interface to describe distributed computations.
 
     @author essdotteedot <essdotteedot_at_gmail_dot_com>
-    @version 0.5.0
+    @version 0.6.0
 *)
 
 (** Some nomenclature :
@@ -127,7 +127,7 @@ module type Nonblock_io = sig
   (** [sleep d] is a thread that remains suspended for [d] seconds and then terminates. *)
 
   val timeout : float -> 'a t
-  (** [timeout d] is a thread that remains suspended for [d] seconds and then fails with ​{exception:Timeout}. *)
+  (** [timeout d] is a thread that remains suspended for [d] seconds and then fails with ​{!exception:Distributed.Nonblock_io.Timeout}. *)
 
   val pick : 'a t list -> 'a t
   (** [pick l] behaves as the first thread in l to terminate. If several threads are already terminated, one is chosen at random. Cancels all sleeping threads when one terminates. *)
@@ -338,5 +338,5 @@ module type Process = sig
 end
 
 module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_type = M.t and type 'a io = 'a I.t)
-(** Functor to create a module of type {!modtype:Process} given a message module [M] of type {!modtype:Message_type}. *)
+(** Functor to create a module of type {!module-type:Process} given a message module [M] of type {!module-type:Message_type}. *)
 

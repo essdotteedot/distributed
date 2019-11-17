@@ -1,33 +1,33 @@
-.PHONY : build clean test doc test_all_ocaml examples
+.PHONY : build clean lwt_test uwt_test doc test_all_ocaml_lwt test_all_ocaml_uwt examples
 
 build :	
-	jbuilder build --dev
+	dune build --workspace dune-workspace.dev
 
 lwt_test : clean
-	jbuilder runtest
+	dune runtest
 	bisect-ppx-report -I _build/default/ -html _coverage/ `find . -name 'bisect*.out'`	
 
 uwt_test : clean
-	jbuilder build @runtest-uwt	
+	dune build @runtest-uwt	
 
 clean :
-	jbuilder clean
+	dune clean
 	rm -f `find . -name 'bisect*.out'`
 	rm -rf _coverage/		
 
 doc :
-	jbuilder build @doc
+	dune build @doc
 
 test_all_ocaml_lwt : clean
-	jbuilder runtest --workspace jbuild-workspace.dev -j 1
+	dune runtest --workspace dune-workspace.dev -j 1
 
 test_all_ocaml_uwt : clean
-	jbuilder build @runtest-uwt --workspace jbuild-workspace.dev -j 1
+	dune build @runtest-uwt --workspace dune-workspace.dev -j 1
 
 examples:
-	jbuilder build examples/basic_example/basic.exe
-	jbuilder build examples/name_server_example/add_client.exe
-	jbuilder build examples/name_server_example/add_server.exe
-	jbuilder build examples/name_server_example/name_server.exe
-	jbuilder build examples/ping_pong_example/ping.exe
-	jbuilder build examples/ping_pong_example/pong.exe
+	dune build examples/basic_example/basic.exe
+	dune build examples/name_server_example/add_client.exe
+	dune build examples/name_server_example/add_server.exe
+	dune build examples/name_server_example/name_server.exe
+	dune build examples/ping_pong_example/ping.exe
+	dune build examples/ping_pong_example/pong.exe

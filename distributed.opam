@@ -1,23 +1,23 @@
-opam-version: "1.2"
+opam-version: "2.0"
 name: "distributed"
-version: "0.5.0"
+version: "0.6.0"
 maintainer: "essdotteedot <essdotteedot@gmail.com>"
 authors: [ "essdotteedot <essdotteedot@gmail.com>" ]
 license: "MIT"
 homepage: "https://github.com/essdotteedot/distributed"
 dev-repo: "https://github.com/essdotteedot/distributed.git"
 bug-reports: "https://github.com/essdotteedot/distributed/issues"
+doc: "https://essdotteedot.github.io/distributed/"
 
 build: [
-  ["jbuilder" "subst" "-n" name] {pinned}
-  ["jbuilder" "build" "-p" name "-j" jobs]
+  ["dune" "subst" "-n" name] {pinned}
+  ["dune" "build" "-p" name "-j" jobs]
 ]
 
 depends: [
-  "jbuilder"  {build & >= "1.0+beta16"}
+  "dune" {build & >= "1.11.0"}
   "base-unix"  
-  # remove following line before release
-  # "bisect_ppx"
+  "bisect_ppx"
+  "ocaml" {>= "4.02.3"}
 ]
 
-available: [ ocaml-version >= "4.02.3" ]

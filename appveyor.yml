@@ -14,7 +14,10 @@ environment:
     - OCAML_BRANCH: 4.03.0
     - OCAML_BRANCH: 4.04.0
     - OCAML_BRANCH: 4.05.0
-    - OCAML_BRANCH: 4.06.0
+    - OCAML_BRANCH: 4.06.1
+    - OCAML_BRANCH: 4.07.1
+    - OCAML_BRANCH: 4.08.1
+    - OCAML_BRANCH: 4.09.0    
 
 build_script:
   - set CYGWIN="nodosfilewarning winsymlinks:native"

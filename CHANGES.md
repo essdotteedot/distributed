@@ -1,3 +1,9 @@
+## 0.6.0 (2019-11-17)
+
+- move from jbuilder to dune
+- move from topkg to to dune-release
+
+
 ## 0.5.0 (2018-03-25)
 
 - Remove dependency on lwt_log use logs_lwt instead to ensure compatibility with  >= lwt 3.1.0 see #2. 

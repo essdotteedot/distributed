@@ -1,0 +1,10 @@
+(executable
+ (name test_lwt)
+ (libraries test_distributed lwt lwt.unix logs.lwt)
+ (modes (native exe)))
+
+(alias
+ (name    runtest)
+ (deps    test_lwt.exe)
+ (package distributed-lwt)
+ (action (run %{exe:test_lwt.exe}))) 

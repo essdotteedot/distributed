@@ -1,25 +1,25 @@
-opam-version: "1.2"
+opam-version: "2.0"
 name: "distributed-uwt"
-version: "0.1.0"
+version: "0.2.0"
 maintainer: "essdotteedot <essdotteedot@gmail.com>"
 authors: [ "essdotteedot <essdotteedot@gmail.com>" ]
 license: "MIT"
 homepage: "https://github.com/essdotteedot/distributed"
 dev-repo: "https://github.com/essdotteedot/distributed.git"
 bug-reports: "https://github.com/essdotteedot/distributed/issues"
+doc: "https://essdotteedot.github.io/distributed/"
 
 build: [
-  ["jbuilder" "subst" "-n" name] {pinned}
-  ["jbuilder" "build" "-p" name "-j" jobs]
+  ["dune" "subst" "-n" name] {pinned}
+  ["dune" "build" "-p" name "-j" jobs]
+  ["dune" "runtest-uwt" "-p" name "-j" jobs] {with-test}
 ]
-
-build-test: [["jbuilder" "build" "@runtest-uwt" "-p" name "-j" jobs]]
 
 depends: [
-  "jbuilder"  {build & >= "1.0+beta16"}
-  "distributed" {>= "0.5.0"}
+  "dune"  {build & >= "1.11.0"}
+  "distributed" {>= "0.6.0"}
   "logs"
-  "uwt"       
+  "uwt" 
+  "ocaml" {>= "4.02.3"}      
 ]
 
-available: [ ocaml-version >= "4.02.3" ]

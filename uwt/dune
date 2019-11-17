@@ -1,9 +1,7 @@
-(jbuild_version 1)
-
 (library
- ((name distributed_uwt)
+  (name distributed_uwt)
   (public_name distributed-uwt)
   (synopsis "A uwt based implementation of Distributed.")  
   (wrapped false)  
-  (libraries (distributed uwt logs.lwt))))  
+  (libraries distributed uwt logs.lwt))
   
