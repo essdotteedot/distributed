@@ -6,11 +6,10 @@ set -x
 echo "Installing bisect_ppx"
 opam install bisect_ppx
 
-echo "Installing ocveralls"
-opam install ocveralls
-
 echo "Running test and making coverage report"
-make lwt_test
+make clean
+dune runtest
+bisect-ppx-report -I _build/default/ --coveralls coverage.json --service-name travis-ci --service-job-id $TRAVIS_JOB_ID `find . -name 'bisect*.out'`
 
 echo "Uploading coverage report"
-ocveralls `find . -name 'bisect*.out'` --send
+curl -L -F json_file=@./coverage.json https://coveralls.io/api/v1/jobs"

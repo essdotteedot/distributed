@@ -17,8 +17,12 @@ build: [
 depends: [
   "dune" {build & >= "1.11.0"}
   "base-unix"  
-  "bisect_ppx" {= "1.4.1"}
+  "bisect_ppx" {dev & >= "2.0.0"}
   "ocaml" {>= "4.02.3"}
+]
+
+pin-depends: [
+  ["bisect_ppx.git" "git+https://github.com/aantron/bisect_ppx.git"]
 ]
 
 synopsis: "Library to provide Erlang style distributed computations. This library is inspired by Cloud Haskell"
