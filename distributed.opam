@@ -17,7 +17,7 @@ build: [
 depends: [
   "dune" {build & >= "1.11.0"}
   "base-unix"  
-  "bisect_ppx"
+  "bisect_ppx" {= "1.4.1"}
   "ocaml" {>= "4.02.3"}
 ]
 
