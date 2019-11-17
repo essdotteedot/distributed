@@ -10,7 +10,7 @@ bug-reports: "https://github.com/essdotteedot/distributed/issues"
 doc: "https://essdotteedot.github.io/distributed/"
 
 build: [
-  ["dune" "subst" "-n" name] {pinned}
+  ["dune" "subst"] {pinned}
   ["dune" "build" "-p" name "-j" jobs]
   ["dune" "runtest" "-p" name "-j" jobs] {with-test}
 ]
