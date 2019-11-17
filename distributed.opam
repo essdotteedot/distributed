@@ -5,7 +5,7 @@ maintainer: "essdotteedot <essdotteedot@gmail.com>"
 authors: [ "essdotteedot <essdotteedot@gmail.com>" ]
 license: "MIT"
 homepage: "https://github.com/essdotteedot/distributed"
-dev-repo: "https://github.com/essdotteedot/distributed.git"
+dev-repo: "git+https://github.com/essdotteedot/distributed.git"
 bug-reports: "https://github.com/essdotteedot/distributed/issues"
 doc: "https://essdotteedot.github.io/distributed/"
 
@@ -21,7 +21,7 @@ depends: [
   "ocaml" {>= "4.02.3"}
 ]
 
-synopsis: "Library to provide Erlang style distributed computations. This library is inspired by Cloud Haskell."
+synopsis: "Library to provide Erlang style distributed computations. This library is inspired by Cloud Haskell"
 
 description: """
 Primitive for spawning processes (in the Erlang sense) either remotely or locally, monitoring/unmonitoring spawned processes, sending, 
