@@ -8,14 +8,14 @@ env:
   global:
    - PINS="distributed:. distributed-lwt:. lwt"   
   matrix:
-    - OCAML_VERSION=4.02 INSTALL=false PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"
-    - OCAML_VERSION=4.03 INSTALL=false PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"
-    - OCAML_VERSION=4.04 INSTALL=false PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"     
-    - OCAML_VERSION=4.05 INSTALL=false PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"    
-    - OCAML_VERSION=4.06 INSTALL=false PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"
-    - OCAML_VERSION=4.07 INSTALL=false PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"
-    - OCAML_VERSION=4.08 INSTALL=false PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"
-    - OCAML_VERSION=4.09 INSTALL=false PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh" 
+    - OCAML_VERSION=4.02 PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"
+    - OCAML_VERSION=4.03 PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"
+    - OCAML_VERSION=4.04 PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"     
+    - OCAML_VERSION=4.05 PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"    
+    - OCAML_VERSION=4.06 PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"
+    - OCAML_VERSION=4.07 PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"
+    - OCAML_VERSION=4.08 PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh"
+    - OCAML_VERSION=4.09 PACKAGE=distributed-lwt POST_INSTALL_HOOK="bash -ex ./coverage.sh" 
 os:
   - linux
   - osx
