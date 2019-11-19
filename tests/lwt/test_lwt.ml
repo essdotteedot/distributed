@@ -118,7 +118,7 @@ let log_to_stdout = Lwt_io.write Lwt_io.stdout
 
 let () =
   let module Tests = Test_distributed.Make(Test_io) in
-  let logger = log_to_stdout in
+  let logger = log_it_quiet in
   Logs.Src.set_level log_src (Some Logs.Debug) ;
   Logs.set_reporter @@ lwt_reporter logger ;
   Tests.run_suite ()

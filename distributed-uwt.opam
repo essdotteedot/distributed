@@ -11,8 +11,7 @@ doc: "https://essdotteedot.github.io/distributed/"
 
 build: [
   ["dune" "subst"] {pinned}
-  ["dune" "build" "-p" name "-j" jobs]
-  ["dune" "runtest-uwt" "-p" name "-j" jobs] {with-test}
+  ["dune" "build" "-p" name "-j" jobs]  
 ]
 
 depends: [
