@@ -1,27 +1,27 @@
-build: off
-
 platform:
   - x64
 
 environment:
   FORK_USER: ocaml
   FORK_BRANCH: master
-  CYG_ROOT: C:\cygwin64 
+  CYG_ROOT: C:\cygwin64
+
+  global:
+   - PINS="distributed:. distributed-uwt:. uwt"  
   
   matrix:
-    - OPAM_SWITCH: 4.02.3+mingw64c
-    - OPAM_SWITCH: 4.03.0+mingw64c
-    - OPAM_SWITCH: 4.04.0+mingw64c
-    - OPAM_SWITCH: 4.05.0+mingw64c
-    - OPAM_SWITCH: 4.06.1+mingw64c
-    - OPAM_SWITCH: 4.07.1+mingw64c
-    - OPAM_SWITCH: 4.08.1+mingw64c
-    - OPAM_SWITCH: 4.09.0+mingw64c
+    - OPAM_SWITCH: 4.02.3+mingw64c PACKAGE=distributed-uwt
+    - OPAM_SWITCH: 4.03.0+mingw64c PACKAGE=distributed-uwt
+    - OPAM_SWITCH: 4.04.0+mingw64c PACKAGE=distributed-uwt
+    - OPAM_SWITCH: 4.05.0+mingw64c PACKAGE=distributed-uwt
+    - OPAM_SWITCH: 4.06.1+mingw64c PACKAGE=distributed-uwt
+    - OPAM_SWITCH: 4.07.1+mingw64c PACKAGE=distributed-uwt
+    - OPAM_SWITCH: 4.08.1+mingw64c PACKAGE=distributed-uwt
+    - OPAM_SWITCH: 4.09.0+mingw64c PACKAGE=distributed-uwt
     
 install:
   - ps: iex ((new-object net.webclient).DownloadString("https://raw.githubusercontent.com/$env:FORK_USER/ocaml-ci-scripts/$env:FORK_BRANCH/appveyor-install.ps1"))
 
 build_script:
-  - call %CYG_ROOT%\bin\bash.exe -l %APPVEYOR_BUILD_FOLDER%\appveyor-opam.sh
-  - C:\cygwin64\bin\bash.exe -lc "$APPVEYOR_BUILD_FOLDER/appveyor.sh" 
+  - call %CYG_ROOT%\bin\bash.exe -l %APPVEYOR_BUILD_FOLDER%\appveyor-opam.sh  
 
