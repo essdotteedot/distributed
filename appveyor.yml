@@ -7,7 +7,7 @@ environment:
   CYG_ROOT: C:\cygwin64
 
   global:
-   - PINS: "distributed:. distributed-uwt:. uwt"  
+    - PINS: "distributed:. distributed-uwt:. uwt"  
   
   matrix:
     - OPAM_SWITCH: 4.02.3+mingw64c PACKAGE=distributed-uwt
