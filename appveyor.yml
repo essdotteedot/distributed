@@ -1,27 +1,25 @@
 platform:
   - x64
 
-image: Visual Studio 2015
-
 environment:
-  CYG_ROOT: cygwin64
-  CYG_ARCH: x86_64
-  CYG_CACHE: C:/cygwin/var/cache/setup
-  CYG_MIRROR: http://mirrors.kernel.org/sourceware/cygwin/  
+  FORK_USER: ocaml
+  FORK_BRANCH: master
+  CYG_ROOT: C:\cygwin64 
   
   matrix:
-    - OCAML_BRANCH: 4.02.3
-    - OCAML_BRANCH: 4.03.0
-    - OCAML_BRANCH: 4.04.0
-    - OCAML_BRANCH: 4.05.0
-    - OCAML_BRANCH: 4.06.1
-    - OCAML_BRANCH: 4.07.1
-    - OCAML_BRANCH: 4.08.1
-    - OCAML_BRANCH: 4.09.0    
+    - OPAM_SWITCH: 4.02.3+mingw64c
+    - OPAM_SWITCH: 4.03.0+mingw64c
+    - OPAM_SWITCH: 4.04.0+mingw64c
+    - OPAM_SWITCH: 4.05.0+mingw64c
+    - OPAM_SWITCH: 4.06.1+mingw64c
+    - OPAM_SWITCH: 4.07.1+mingw64c
+    - OPAM_SWITCH: 4.08.1+mingw64c
+    - OPAM_SWITCH: 4.09.0+mingw64c
+    
+install:
+  - ps: iex ((new-object net.webclient).DownloadString("https://raw.githubusercontent.com/$env:FORK_USER/ocaml-ci-scripts/$env:FORK_BRANCH/appveyor-install.ps1"))
 
 build_script:
-  - set CYGWIN="nodosfilewarning winsymlinks:native"
-  - C:\cygwin64\setup-x86_64.exe --root=C:\cygwin64 --quiet-mode --no-desktop --no-startmenu --packages=perl,diffutils,rsync,git,unzip,gzip,tar,make,mingw64-i686-gcc-core,mingw64-x86_64-gcc-core,m4,patch
-  - appveyor DownloadFile "https://github.com/fdopen/opam-repository-mingw/releases/download/0.0.0.1/opam64.tar.xz" -FileName "C:\projects\opam64.tar.xz" 
-  - C:\cygwin64\bin\bash.exe -lc "$APPVEYOR_BUILD_FOLDER/appveyor.sh"  
-  
+  - call %CYG_ROOT%\bin\bash.exe -l %APPVEYOR_BUILD_FOLDER%\appveyor-opam.sh
+  - C:\cygwin64\bin\bash.exe -lc "$APPVEYOR_BUILD_FOLDER/appveyor.sh" 
+
