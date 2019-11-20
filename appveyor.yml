@@ -15,6 +15,8 @@ environment:
     - OPAM_SWITCH: 4.07.1+mingw64c
     - OPAM_SWITCH: 4.08.1+mingw64c
     - OPAM_SWITCH: 4.09.0+mingw64c
+
+build: off
     
 install:
   - ps: iex ((new-object net.webclient).DownloadString("https://raw.githubusercontent.com/$env:FORK_USER/ocaml-ci-scripts/$env:FORK_BRANCH/appveyor-install.ps1"))
