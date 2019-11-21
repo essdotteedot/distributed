@@ -1,7 +1,8 @@
-## 0.6.0 (2019-11-17)
+## 0.6.0 (TBD)
 
 - move from jbuilder to dune
 - move from topkg to to dune-release
+- Lwt 5.0.0 compatibility see #6.
 
 
 ## 0.5.0 (2018-03-25)
