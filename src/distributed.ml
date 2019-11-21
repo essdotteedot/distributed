@@ -155,7 +155,7 @@ module type Nonblock_io = sig
 
   val catch : (unit -> 'a t) -> (exn -> 'a t) -> 'a t
 
-  val async : (unit -> 'a t) -> unit
+  val async : (unit -> unit t) -> unit
 
   val create_stream : unit -> 'a stream * ('a option -> unit)
 
@@ -363,7 +363,7 @@ module Make (I : Nonblock_io) (M : Message_type) : (Process with type message_ty
 
   let initalised = ref false    
 
-  let dist_lib_version = "0.5.0"       
+  let dist_lib_version = "0.6.0"       
 
   let print_string_of_termination_reason (reason : monitor_reason) (formatter : Format.formatter) : unit =
     match reason with

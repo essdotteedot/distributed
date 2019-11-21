@@ -85,7 +85,7 @@ module type Nonblock_io = sig
       If the thread [t ()] fails with some exception, [catch t f] behaves as the application of [f] to this exception. 
   *)
 
-  val async : (unit -> 'a t) -> unit
+  val async : (unit -> unit t) -> unit
   (** [async f starts] a thread without waiting for the result. *)                 
 
   val create_stream : unit -> 'a stream * ('a option -> unit)

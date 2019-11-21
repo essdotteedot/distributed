@@ -27,7 +27,7 @@ module Test_io = struct
 
   let lib_name = "Test_uwt_io"
 
-  let lib_version = "0.1.0"
+  let lib_version = "0.2.0"
 
   let lib_description = "A Uwt based test implementation that uses for testing purposes"              
 

@@ -24,7 +24,7 @@ module IO_LWT(L : CustomerLogger) = struct
 
   let lib_name = "Distributed_lwt"
 
-  let lib_version = "0.1.0"
+  let lib_version = "0.2.0"
 
   let lib_description = "A Lwt based implementation."           
 
