@@ -3,5 +3,4 @@
   (public_name distributed)
   (synopsis "Library to provide Erlang style distributed computations. This library is inspired by Cloud Haskell.")
   (libraries unix)
-  (wrapped false)   
-  (preprocess (pps bisect_ppx)))
+  (wrapped false))
