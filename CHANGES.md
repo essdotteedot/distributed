@@ -1,4 +1,4 @@
-## 0.6.0 (TBD)
+## 0.6.0 (2019-11-24)
 
 - move from jbuilder to dune
 - move from topkg to to dune-release
