@@ -14,8 +14,8 @@ build: [
 ]
 
 depends: [
-  "dune"  {build & >= "1.11.0"}
-  "distributed" {>= "0.6.0"}
+  "dune"  {>= "1.11.0"}
+  "distributed" {= "0.6.0"}
   "logs"
   "uwt" 
   "ocaml" {>= "4.02.3"}      
